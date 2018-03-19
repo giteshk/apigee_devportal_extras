@@ -14,7 +14,7 @@ function apiproduct_catalog_edge_custom_roles_schema()
     $schema['api_team_tracker'] = array(
         'description' => 'Map team name ,which could be strings, to unique numeric ids',
         'fields' => array(
-            'internal_id' => array(
+            'team_id' => array(
                 'type' => 'serial',
                 'not null' => TRUE,
                 'description' => "Numeric ID",
@@ -26,14 +26,37 @@ function apiproduct_catalog_edge_custom_roles_schema()
                 'not null' => TRUE,
             ),
         ),
-        'primary key' => array('internal_id', 'team_name'),
+        'primary key' => array('team_id', 'team_name'),
 
     );
-
+    $schema['edge_users_team_mapping'] = array(
+      'description' => 'Map team name ,which could be strings, to unique numeric ids',
+      'fields' => array(
+        'uid' => array(
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+          'default' => 0,
+          'description' => 'Primary Key: {users}.uid for user.',
+        ),
+        'team_id' => array(
+          'description' => 'Team ID',
+          'type' => 'varchar',
+          'length' => 255,
+          'not null' => TRUE,
+        ),
+      ),
+      'primary key' => array('uid', 'team_id'),
+      'foreign keys' => array(
+        'user' => array(
+          'table' => 'users',
+          'columns' => array('uid' => 'uid'),
+        ),
+        'api_team_tracker' => array(
+          'table' => 'api_team_tracker',
+          'columns' => array('rid' => 'team_id'),
+        ),
+      ),
+    );
     return $schema;
-}
-
-
-function apiproduct_catalog_edge_custom_roles_install()
-{
 }

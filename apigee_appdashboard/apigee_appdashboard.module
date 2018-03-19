@@ -203,7 +203,7 @@ function apigee_appdashboard_devconnect_developer_app_delete($results, $form_sta
  */
 function apigee_appdashboard_devconnect_developer_app_save(array $results, array &$form_state)
 {
-    $app = new \Apigee\ManagementAPI\DeveloperApp(devconnect_default_org_config());
+    $app = new \Apigee\ManagementAPI\DeveloperApp(devconnect_default_org_config(), '');
     $app = $app->loadByAppId($form_state['storage']['entity']->appId);
     $dev_or_company = [];
     if ($app instanceof \Apigee\ManagementAPI\CompanyApp) {
@@ -244,18 +244,20 @@ function apigee_appdashboard_views_api()
 function apigee_appdashboard_user_login(&$edit, $account)
 {
     $account = user_load($account->uid);
-    $role = user_role_load_by_name(APIGEE_APPDASHBOARD_APPROVER_ROLE);
-    if(count(views_get_view_result('api_product_dashboard')) > 0) {
-        if(!isset($account->roles[$role->rid])) {
-            $account->roles[$role->rid] = $role->name;
-            user_save($account);
+    if(module_exists('apiproduct_catalog')) {
+      $role = user_role_load_by_name(APIGEE_APPDASHBOARD_APPROVER_ROLE);
+      if (count(_apiproduct_catalog_editable_api_products()) > 0) {
+        if (!isset($account->roles[$role->rid])) {
+          $account->roles[$role->rid] = $role->name;
+          user_save($account);
         }
 
-    } else {
-        if(isset($account->roles[$role->rid])) {
-            unset($account->roles[$role->rid]);
-            user_save($account);
+      } else {
+        if (isset($account->roles[$role->rid])) {
+          unset($account->roles[$role->rid]);
+          user_save($account);
         }
+      }
     }
 }
 

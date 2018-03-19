@@ -465,7 +465,7 @@ function apiproduct_catalog_user_login(&$edit, $account)
 {
     $account = user_load($account->uid);
     $role = user_role_load_by_name('product owner');
-    if(count(views_get_view_result('api_product_dashboard')) > 0) {
+    if(count(_apiproduct_catalog_editable_api_products()) > 0) {
         if(!isset($account->roles[$role->rid])) {
             $account->roles[$role->rid] = $role->name;
             user_save($account);
@@ -585,6 +585,7 @@ function apiproduct_catalog_init()
             drupal_set_message(t("Please rebuild node permissions to ensure content is properly secure. !rebuild_permission_link",['!rebuild_permission_link' => l("Click here", "admin/reports/status/rebuild")]), "error", false);
         }
     }
+    drupal_add_css(drupal_get_path("module", "apiproduct_catalog") ."/css/apiproduct_catalog.css");
 }
 
 /**

@@ -1,5 +1,6 @@
 <?php
 
+require "apiproducts_catalog_product_owners.tokens.inc";
 /**
  * Implements hook_apiproduct_catalog_node_postsave().
  */

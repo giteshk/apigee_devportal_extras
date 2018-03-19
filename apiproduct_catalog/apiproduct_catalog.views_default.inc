@@ -935,7 +935,8 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['pager']['options']['offset'] = '0';
   $handler->display->display_options['pager']['options']['id'] = '0';
   $handler->display->display_options['pager']['options']['quantity'] = '9';
-  $handler->display->display_options['style_plugin'] = 'grid';
+  $handler->display->display_options['style_plugin'] = 'default';
+  $handler->display->display_options['style_options']['row_class'] = 'col-md-3';
   $handler->display->display_options['row_plugin'] = 'fields';
   /* No results behavior: Global: Text area */
   $handler->display->display_options['empty']['area']['id'] = 'area';
@@ -1005,21 +1006,12 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['fields']['nothing']['table'] = 'views';
   $handler->display->display_options['fields']['nothing']['field'] = 'nothing';
   $handler->display->display_options['fields']['nothing']['label'] = '';
-  $handler->display->display_options['fields']['nothing']['alter']['text'] = '  <div id="product-[nid]" class="api-product-item">
-    <div class="api-product-wrapper">
-       <div class="api-product-image">
-[field_product_image]
-      </div>
-      <div>
-        <h2 class="api-product-name">[title]</h2>
-      </div>
-      <div class="api-product-desc">
-      </div>
-      <div class="api-product-link">
-        [nothing_1]
-      </div>
-    </div>
-  </div>';
+  $handler->display->display_options['fields']['nothing']['alter']['text'] = '<div id="product-[nid]" class="apigee-catalog-item">
+  <div class="apigee-catalog-item-wrapper">
+    <div class="apigee-catalog-item-icon">[field_product_image]</div>
+    <div class="apigee-catalog-item-title">[title]</div>
+  </div>
+</div>';
   $handler->display->display_options['fields']['nothing']['element_label_colon'] = FALSE;
   /* Sort criterion: Content: Title */
   $handler->display->display_options['sorts']['title']['id'] = 'title';
@@ -1191,7 +1183,8 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['pager']['options']['offset'] = '0';
   $handler->display->display_options['pager']['options']['id'] = '0';
   $handler->display->display_options['pager']['options']['quantity'] = '9';
-  $handler->display->display_options['style_plugin'] = 'grid';
+  $handler->display->display_options['style_plugin'] = 'default';
+  $handler->display->display_options['style_options']['row_class'] = 'col-md-3';
   $handler->display->display_options['row_plugin'] = 'fields';
   /* Header: Global: Text area */
   $handler->display->display_options['header']['area']['id'] = 'area';
@@ -1225,6 +1218,7 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['fields']['field_model_image']['table'] = 'field_data_field_model_image';
   $handler->display->display_options['fields']['field_model_image']['field'] = 'field_model_image';
   $handler->display->display_options['fields']['field_model_image']['label'] = '';
+  $handler->display->display_options['fields']['field_model_image']['exclude'] = TRUE;
   $handler->display->display_options['fields']['field_model_image']['element_label_colon'] = FALSE;
   $handler->display->display_options['fields']['field_model_image']['click_sort_column'] = 'fid';
   $handler->display->display_options['fields']['field_model_image']['settings'] = array(
@@ -1245,6 +1239,7 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['fields']['name']['table'] = 'field_data_field_model_display_name';
   $handler->display->display_options['fields']['name']['field'] = 'field_model_display_name';
   $handler->display->display_options['fields']['name']['label'] = '';
+  $handler->display->display_options['fields']['name']['exclude'] = TRUE;
   $handler->display->display_options['fields']['name']['alter']['make_link'] = TRUE;
   $handler->display->display_options['fields']['name']['alter']['path'] = 'taxonomy/term/[tid]';
   $handler->display->display_options['fields']['name']['element_type'] = 'span';
@@ -1259,6 +1254,21 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['fields']['description']['label'] = '';
   $handler->display->display_options['fields']['description']['exclude'] = TRUE;
   $handler->display->display_options['fields']['description']['element_label_colon'] = FALSE;
+  /* Field: Global: Custom text */
+  $handler->display->display_options['fields']['nothing']['id'] = 'nothing';
+  $handler->display->display_options['fields']['nothing']['table'] = 'views';
+  $handler->display->display_options['fields']['nothing']['field'] = 'nothing';
+  $handler->display->display_options['fields']['nothing']['label'] = '';
+  $handler->display->display_options['fields']['nothing']['alter']['text'] = '
+
+<div id="api-[tid]" class="apigee-catalog-item">
+  <div class="apigee-catalog-item-wrapper">
+    <div class="apigee-catalog-item-icon">[field_model_image]</div>
+    <div class="apigee-catalog-item-title">[name]</div>
+  </div>
+</div>
+';
+  $handler->display->display_options['fields']['nothing']['element_label_colon'] = FALSE;
   /* Sort criterion: Taxonomy term: Name */
   $handler->display->display_options['sorts']['name']['id'] = 'name';
   $handler->display->display_options['sorts']['name']['table'] = 'taxonomy_term_data';
