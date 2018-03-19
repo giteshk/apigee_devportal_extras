@@ -1,0 +1,9 @@
+name = APIProduct Catalog - Edge Custom roles
+description = Adds the ability to control API Catalog visibility tied to custom roles in Edge.
+core = 7.x
+package = Apigee Extras
+dependencies[] = features
+dependencies[] = text
+features[features_api][] = api:2
+features[field_base][] = field_api_team_name
+features[field_instance][] = node-edge_api_product-field_api_team_name

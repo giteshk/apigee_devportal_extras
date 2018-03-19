@@ -1,0 +1,232 @@
+<?php
+
+/**
+ * Implements hook_apiproduct_catalog_node_postsave().
+ */
+function apiproduct_catalog_product_owners_apiproduct_catalog_node_postsave($node, $edge_api_product)
+{
+    $needs_save = false;
+    $form = [];
+    $form_state = [];
+
+    nodeaccess_grants_form($form, $form_state, $node);
+    $form_values = &$form_state['values'];
+
+    /**
+     * Make sure to take away the edit access from users.
+     * You have to be on the "product_owner" custom attribute of API Product in edge to have this access.
+     * Portal will grant you temporary access till the access is granted in edge till the next sync.
+     */
+    foreach($form_values['uid'] as $_uid => &$_grant){
+        if($_grant['grant_update'] !== 0) {
+            $_grant['grant_update'] = 0;
+            $needs_save = true;
+        }
+    }
+    /**
+     * Make sure to take away the edit access from roles.
+     * You have to be on the "product_owner_role" custom attribute of API Product in edge to have update access.
+     * You have to be on the "audience" custom attribute of API Product in edge to have view access.
+     * Portal will grant you temporary access till the access is granted in edge till the next sync.
+     */
+    foreach($form_values['rid'] as $_rid => &$_grant){
+        if($_grant['grant_update'] !== 0) {
+            $_grant['grant_update'] = 0;
+            $needs_save = true;
+        }
+        if($_grant['grant_view'] !== 0) {
+            $_grant['grant_view'] = 0;
+            $needs_save = true;
+        }
+    }
+
+    if (isset($edge_api_product->attributes['product_owner'])) {
+        $owners = explode(",", $edge_api_product->attributes['product_owner']);
+        foreach ($owners as $_key => $_owner) {
+            $owners[$_key] = trim($_owner);
+        }
+        $accounts = user_load_multiple([], ['mail' => $owners]);
+        if (!empty($accounts)) {
+
+
+            foreach ($accounts as $account) {
+                $form_values['uid'][$account->uid] = array(
+                    'name' => $account->name,
+                    'keep' => 1,
+                    'grant_view' => 1,
+                    'grant_update' => 1,
+                    'grant_delete' => 0,
+                );
+                $needs_save = true;
+            }
+
+        }
+    }
+    if (isset($edge_api_product->attributes['product_owner_role'])) {
+        $roles = explode(",", $edge_api_product->attributes['product_owner_role']);
+        foreach ($roles as $i => $_role) {
+            $roles[$i] = trim($_role);
+        }
+        $drupal_roles = array_intersect(user_roles(), $roles);
+
+        if (!empty($drupal_roles)) {
+
+            foreach ($drupal_roles as $_rid => $_role) {
+
+                $form_values['rid'][$_rid] = array(
+                    'name' => $_role,
+                    'keep' => 1,
+                    'grant_view' => 1,
+                    'grant_update' => 1,
+                    'grant_delete' => 0,
+                );
+                $needs_save = true;
+            }
+        }
+    }
+    if (isset($edge_api_product->attributes['audience_role'])) {
+        $roles = explode(",", $edge_api_product->attributes['audience_role']);
+        foreach ($roles as $i => $_role) {
+            $roles[$i] = trim($_role);
+        }
+        $drupal_roles = array_intersect(user_roles(), $roles);
+
+        if (!empty($drupal_roles)) {
+
+            foreach ($drupal_roles as $_rid => $_role) {
+                if(!isset($form_values['rid'][$_rid])) {
+                    $form_values['rid'][$_rid] = array(
+                        'name' => $_role,
+                        'keep' => 1,
+                        'grant_view' => 1,
+                        'grant_update' => 0,
+                        'grant_delete' => 0,
+                    );
+                } else {
+                    $form_values['rid'][$_rid]['grant_view'] = 1;
+                }
+                $needs_save = true;
+            }
+        }
+    }
+    if($needs_save) {
+
+        $form_state['values']['nid'] = $node->nid;
+        $form_state['clicked_button']['#id'] = 'edit-submit';
+
+        nodeaccess_grants_form_submit($form, $form_state);
+        /**
+         * trigger acquire grants for node
+         */
+        apiproduct_catalog_node_update($node);
+
+    }
+}
+
+/**
+ * Implements hook_node_access_records().
+ */
+function apiproduct_catalog_product_owners_node_access_records($node)
+{
+    $grants = [];
+    if (isset($node->status) && !$node->status) {
+        //Only do this for published nodes
+        return $grants;
+    }
+    // Only write grants for published nodes.
+    if ($node->type == 'smart_method') {
+
+        $model_tid = $node->field_smart_method_model[LANGUAGE_NONE][0]['tid'];
+        $query = new EntityFieldQuery();
+
+        //Load the API Product nodes using the current model
+        $result = $query->entityCondition("entity_type", "node")
+            ->entityCondition("bundle", "edge_api_product")
+            ->fieldCondition("field_smart_method_model", 'tid', $model_tid, '=')
+            ->addTag('DANGEROUS_ACCESS_CHECK_OPT_OUT')
+            ->execute();
+        if (empty($result['node'])) {
+            return $grants;
+        }
+        $nodes = node_load_multiple(array_keys($result['node']));
+        foreach ($nodes as $api_product_node) {
+            /**
+             * Load the API Product nodeaccess records for the API Product nodes since that would apply to the
+             * SmartDocs nodes too.
+             */
+            $records = nodeaccess_node_access_records($api_product_node); //Load the nodeaccess records for the API Product node
+            foreach ($records as $record) {
+                $key = $record['realm'] . ":" . $record['gid'];
+                if (!isset($grants[$key])) {
+                    $grants[$key] = $record;
+                } else {
+                    /**
+                     * Ensure corrects permissions for SmartDocs Models belonging to multiple API Products.
+                     * If there are multiple entries make sure that the view, edit, delete permissions are merged
+                     *
+                     */
+                    foreach (['grant_view', 'grant_update', 'grant_delete'] as $_grant) {
+                        if ($grants[$key][$_grant] != 1 && $record[$_grant] == 1) {
+                            $grants[$key][$_grant] = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return $grants;
+}
+
+/**
+ * Implements hook_query_alter().
+ */
+function apiproduct_catalog_product_owners_query_alter(QueryAlterableInterface $query)
+{
+    if ($query->hasTag('check_edge_apiproduct_access')) {
+        //dpm($query);
+    }
+}
+
+/**
+ * On submit of the nodeaccess grant settings trigger rewriting of the nodeaccess permissions
+ * for all linked smartdocs method nodes
+ *
+ * @param $form
+ * @param $form_state
+ */
+function apiproduct_catalog_product_owners_form_nodeaccess_grants_form_alter(&$form, $form_state)
+{
+    $node = node_load($form['nid']['#value']);
+    if ($node->type == 'edge_api_product') {
+        $form['#submit'][] = 'apiproduct_catalog_product_owners_nodeaccess_grants_form_submit';
+    }
+}
+
+function apiproduct_catalog_product_owners_nodeaccess_grants_form_submit($form, $form_state)
+{
+    if ($form_state['clicked_button']['#id'] == 'edit-search') {
+        return;
+    }
+    $nid = $form_state['values']['nid'];
+    $node = node_load($nid);
+    /**
+     * Make sure to trigger the ACL rebuild after the nodeaccess grant form is submitted.
+     */
+    apiproduct_catalog_node_update($node);
+}
+
+
+
+/**
+ * Implements hook_menu_alter().
+ *
+ * Make sure the you can access the nodeaccess page if you can edit the node.
+ *
+ */
+function apiproduct_catalog_product_owners_menu_alter(&$items)
+{
+    if (isset($items['node/%node/grant'])) {
+        $items['node/%node/grant']['access callback'] = 'node_access';
+        $items['node/%node/grant']['access arguments'] = array('update', 1);
+    }
+}

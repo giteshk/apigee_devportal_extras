@@ -1,0 +1,239 @@
+<?php
+/**
+ * @file
+ * Drupal needs this blank file.
+ */
+
+define("EDGE_CUSTOM_ROLE_TEAM_GRANT", 'apigee_custom_role_team');
+
+
+
+/**
+ * Implements hook_menu().
+ */
+function apiproduct_catalog_edge_custom_roles_readonly_sysadmin_menu()
+{
+    $items = array();
+    $items['admin/config/apigee_extras/apiproduct_catalog_edge_custom_roles'] = array(
+        'title' => 'Readonly SysAdmin Settings',
+        'description' => 'Use this to set the readonly sysadmin credentials in the portal',
+        'page callback' => 'apiproduct_catalog_edge_custom_roles_settings_form',
+        'access arguments' => array('administer organization settings'),
+        'file' => 'apiproduct_catalog_edge_custom_roles.admin.inc',
+    );
+    return $items;
+}
+
+
+/**
+ * Implements hook_apiproduct_catalog_node_presave_alter().
+ */
+function apiproduct_catalog_edge_custom_roles_apiproduct_catalog_node_presave_alter(&$node, $edge_api_product)
+{
+    $node->field_api_team_name = [];
+    if (isset($edge_api_product->attributes['team_name']) && !empty(trim($edge_api_product->attributes['team_name']))) {
+        $team_names = explode(',', $edge_api_product->attributes['team_name']);
+        foreach ($team_names as $team_name) {
+            $team_name = trim($team_name);
+            if (!empty($team_name)) {
+                $node->field_api_team_name[LANGUAGE_NONE][] = ['value' => $team_name];
+            }
+        }
+    }
+}
+
+
+/**
+ * Disable the edit of edge_product_name field
+ *
+ * @param $form
+ * @param $form_state
+ */
+function apiproduct_catalog_edge_custom_roles_form_edge_api_product_node_form_alter(&$form, $form_state)
+{
+    if (!empty($form['nid']['#value'])) {
+        $form['field_api_team_name']['#access'] = false;
+    }
+}
+
+/**
+ * Implements hook_node_access_records().
+ *
+ * @ingroup tac_node_access
+ */
+function apiproduct_catalog_edge_custom_roles_node_access_records($node)
+{
+    $grants = [];
+    if (isset($node->status) && !$node->status) {
+        //Only do this for published nodes
+        return $grants;
+    }
+    // Only write grants for published nodes.
+    if ($node->type == 'smart_method') {
+
+        $model_tid = $node->field_smart_method_model[LANGUAGE_NONE][0]['tid'];
+        $query = new EntityFieldQuery();
+
+        //Load the API Product nodes using the current model
+        $result = $query->entityCondition("entity_type", "node")
+            ->entityCondition("bundle", "edge_api_product")
+            ->fieldCondition("field_smart_method_model", 'tid', $model_tid, '=')
+            ->addTag('DANGEROUS_ACCESS_CHECK_OPT_OUT')
+            ->execute();
+        if (empty($result['node'])) {
+            return $grants;
+        }
+        $nodes = node_load_multiple(array_keys($result['node']));
+        foreach ($nodes as $api_product_node) {
+            /**
+             * Get the grant for the team names and apply that to smart_method nodes too
+             */
+            foreach (apiproduct_catalog_edge_custom_roles_node_access_records($api_product_node) as $_key => $_grant) {
+                $grants[$_key] = $_grant;
+            }
+        }
+    } elseif ($node->type == 'edge_api_product') {
+        /**
+         * If the Seal ID is present on the node than use that as one of the realms to gain view access to the node
+         */
+        foreach ($node->field_api_team_name[LANGUAGE_NONE] as $team_name) {
+            if (!empty($team_name['value'])) {
+                $realm = EDGE_CUSTOM_ROLE_TEAM_GRANT;
+                $grants[$realm . ":" . $team_name['value']] = [
+                    'realm' => $realm,
+                    'gid' => _apiproduct_catalog_edge_custom_roles_get_team_id_from_team_identifier($team_name['value']),
+                    'grant_view' => 1,
+                    'grant_update' => 0,
+                    'grant_delete' => 0,
+                    'priority' => 0,
+                ];
+            }
+        }
+    }
+    return $grants;
+}
+
+
+/**
+ * Implements hook_node_grants().
+ */
+function apiproduct_catalog_edge_custom_roles_node_grants($account, $op)
+{
+    $static_cache = &drupal_static(__FUNCTION__, []);
+    $grants = [];
+    if ($account->uid == 0) {
+        return $grants;
+    }
+    if (isset($static_cache[$account->uid])) {
+        $grants = $static_cache[$account->uid];
+    } else {
+        $cache_id = __FUNCTION__ . ":account:$account->uid";
+        if (TRUE || ($cache = cache_get($cache_id)) === false) {
+            if(module_exists('apigee_devconnect_readonly_sysadmin')) {
+                $config = devconnect_default_org_config("readonly_admin");
+                require_once drupal_get_path("module", "apigee_devconnect_readonly_sysadmin") . "/User.php";
+                $apigee_user = new \APIProduct_Catalog\Apigee\ManagementAPI\User($config, $account->mail);
+                $apigee_user_roles = $apigee_user->getRoles();
+
+                if ($apigee_user_roles === false) { //User does not have any roles in edge
+                    $grants = [];
+                } else {
+                    $team_ids = [];
+                    $pattern = _apiproduct_catalog_edge_custom_roles_team_regex();
+                    foreach ($apigee_user_roles as $custom_role) {
+                        $matches = [];
+                        if (preg_match($pattern, $custom_role, $matches) === 1) {
+                            $team_ids[] = _apiproduct_catalog_edge_custom_roles_get_team_id_from_team_identifier($matches[1]);
+                        }
+                    }
+                    if (!empty($team_ids)) {
+                        $grants[EDGE_CUSTOM_ROLE_TEAM_GRANT] = $team_ids;
+                    }
+                }
+            }
+            /**
+             * Cache grants for 10 mins so as not to overwhelm the MGMT server with the calls.
+             */
+            cache_set($cache_id, $grants, 'cache', REQUEST_TIME + 10 * 60);
+        } else {
+            $grants = $cache->data;
+        }
+        $static_cache[$account->uid] = $grants;
+    }
+    return $grants;
+}
+
+/**
+ * Generate an ID for the team name that is passed.
+ *
+ * Seal IDs can be alpha numeric, and gid in node_access table cannot be alpha-numeric
+ *
+ * @param $team_name
+ * @return mixed
+ */
+function _apiproduct_catalog_edge_custom_roles_get_team_id_from_team_identifier($team_name)
+{
+    $static = &drupal_static(__FUNCTION__, []);
+    if (!isset($static[$team_name])) {
+        $team_tracker = new stdClass();
+        $result = db_select("api_team_tracker", 's')
+            ->fields('s', ['internal_id'])
+            ->condition('team_name', $team_name)
+            ->execute();
+        $result = $result->fetchcol('internal_id');
+        if (empty($result)) {
+            $team_tracker->team_name = $team_name;
+            drupal_write_record('api_team_tracker', $team_tracker);
+            $internal_id = $team_tracker->internal_id;
+        } else {
+            $internal_id = reset($result);
+        }
+        $static[$team_name] = $internal_id;
+    }
+    return $static[$team_name];
+}
+
+/**
+ * Implements hook_apiproduct_catalog_reset().
+ */
+function apiproduct_catalog_edge_custom_roles_apiproduct_catalog_reset()
+{
+    db_delete("api_team_tracker")->execute();
+}
+
+/**
+ * Implements hook_cron().
+ */
+function apiproduct_catalog_edge_custom_roles_cron()
+{
+    $edge_roles = new \Apigee\ManagementAPI\UserRole(devconnect_default_org_config());
+    $pattern = _apiproduct_catalog_edge_custom_roles_team_regex();
+    foreach($edge_roles->listRoles(true) as $role){
+        if (preg_match($pattern, $role, $matches) === 1) {
+            $team_ids = _apiproduct_catalog_edge_custom_roles_get_team_id_from_team_identifier($matches[1]);
+        }
+    }
+}
+
+
+function _apiproduct_catalog_edge_custom_roles_team_regex(){
+    $team_name_suffixes = explode(",", variable_get('apiproduct_catalog_edge_custom_roles_team_name_suffixes', '_developer'));
+    $team_name_regex = [];
+    foreach ($team_name_suffixes as $suffix) {
+        $suffix = trim($suffix);
+        if (!empty($suffix)) {
+            $team_name_regex[] = $suffix;
+        }
+    }
+    $pattern = "/^(.+)(" . implode("|", $team_name_regex) . ")$/i";
+    return $pattern;
+}
+
+/**
+ * Implements hook_init().
+ */
+function apiproduct_catalog_edge_custom_roles_init()
+{
+    $edge_roles = new \Apigee\ManagementAPI\UserRole(devconnect_default_org_config());
+    dpm($edge_roles->listRoles(true));
+}

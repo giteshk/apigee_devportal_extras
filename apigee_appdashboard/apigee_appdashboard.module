@@ -1,0 +1,275 @@
+<?php
+/**
+ * @file
+ * Code for the Sage App Dashboard feature.
+ */
+
+require 'inc/apigee_appdashboard.rules.inc';
+require 'inc/apigee_appdashboard.batch.inc';
+
+define ("APIGEE_APPDASHBOARD_APPROVER_ROLE", 'app approver');
+
+/**
+ * @file
+ * Module file for Sage App Dashboard.
+ */
+
+use Drupal\devconnect_developer_apps\DeveloperAppEntity;
+
+define('apigee_appdashboard_VIEW_PATH', 'admin/apigee_extras/appdashboard');
+define('apigee_appdashboard_STATUS_APPROVED', 'approved');
+define('apigee_appdashboard_STATUS_PENDING', 'pending');
+define('apigee_appdashboard_STATUS_REVOKED', 'revoked');
+
+/**
+ * Implements hook_menu().
+ */
+function apigee_appdashboard_menu()
+{
+    $items = [];
+
+    $items['admin/config/apigee_extras/appdashboard'] = [
+        'title' => "Resync APP Dashboard from Edge",
+        'page callback' => 'drupal_get_form',
+        'page arguments' => ['apigee_appdashboard_admin_form'],
+        'access arguments' => array("administer site configuration"),
+    ];
+
+    $app_index = count(explode("/", apigee_appdashboard_VIEW_PATH)) + 1;
+    $items[apigee_appdashboard_VIEW_PATH . '/app-details/%apigee_appdashboard_app/view'] = [
+        'title' => 'AppDashboard App Details',
+        'page callback' => 'apigee_appdashboard_app_details_page',
+        'page arguments' => [$app_index],
+        'access arguments' => ["administer apigee-extras appdashboard"],
+        'type' => MENU_CALLBACK,
+    ];
+
+    return $items;
+}
+
+/**
+ * Implements hook_permission().
+ */
+function apigee_appdashboard_permission()
+{
+    return [
+        'administer apigee-extras appdashboard' => [
+            'title' => 'Administer App Dashboard [Apigee Extras]',
+            'restrict access' => TRUE,
+        ]
+    ];
+}
+
+
+function apigee_appdashboard_app_load($app_id)
+{
+    return entity_load_single("developer_app", $app_id);
+}
+
+
+function apigee_appdashboard_app_details_page(DeveloperAppEntity $app)
+{
+    global $user;
+    $form ['user_entered '] = [
+        '#type' => 'fieldset',
+        '#title' => 'App Details',
+        'form' => drupal_get_form('devconnect_developer_apps_edit_form', $user, $app->appId),
+    ];
+    $form['key_status'] = [
+        '#type' => 'fieldset',
+        '#title' => 'Approve / Reject the request',
+        'owner' => [
+            '#type' => 'item',
+            '#title' => 'Owner of the app',
+            '#markup' => $app->developer,
+        ],
+        'last_modifier' => [
+            '#type' => 'item',
+            '#title' => 'Last modifier',
+            '#markup' => $app->attributes['lastModifier'] ?: $app->modifiedBy,
+        ],
+        'form' => drupal_get_form('apigee_appdashboard_key_form', $app),
+    ];
+    return render($form);
+}
+
+function apigee_appdashboard_key_form($form, $form_state, DeveloperAppEntity $app)
+{
+    drupal_set_title("Approval form for {$app->name}");
+    drupal_set_breadcrumb([l("Home", "home"), l('App Dashboard', apigee_appdashboard_VIEW_PATH)]);
+    $form = [
+        '#tree' => 'true',
+        'app_id' => ['#type' => 'value', '#value' => $app->appId],
+        '#credential_original_values' => [],
+    ];
+    $i = 0;
+    foreach ($app->credentials as $c) {
+        $i++;
+        $form['credentials'][$i] = [
+            '#type' => 'fieldset',
+            '#title' => 'Credentials ' . $i,
+            'issued_at' => [
+                '#title' => 'Issued At',
+                '#type' => 'item',
+                '#markup' => format_date(round($c['issuedAt'] / 1000), 'medium'),
+            ],
+            'expires_at' => [
+                '#title' => 'Expires At',
+                '#type' => 'item',
+                '#markup' => is_null($c['expiresAt']) ? "Never" : format_date(round($c['expiresAt'] / 1000), 'medium'),
+            ],
+            'consumerKey' => [
+                '#type' => 'value',
+                '#value' => $c['consumerKey'],
+            ],
+        ];
+        $rows = [];
+        foreach ($c['apiProducts'] as $p) {
+            $form['credentials'][$i]['products'][$p['apiproduct']] = [
+
+                '#title' => $p['apiproduct'] . " [Current Status : " . $p['status'] . "]",
+                '#type' => 'select',
+                '#options' => ['approve' => "Approved", 'revoke' => 'Revoked'],
+                '#default_value' => $p['status'] == 'approved' ? 'approve' : 'revoke',
+            ];
+            $form['#credential_original_values']['credentials'][$i]['products'][$p['apiproduct']] = $p['status'] == 'approved' ? 'approve' : 'revoke';
+        }
+    }
+    $form['submit'] = [
+        '#type' => 'submit',
+        '#value' => 'Save'
+    ];
+    return $form;
+}
+
+function apigee_appdashboard_key_form_submit($form, &$form_state)
+{
+    $app_id = $form_state['values']['app_id'];
+    $config = devconnect_default_org_config();
+    $approver = new ApigeeAPIProductKeyApprover($config, $app_id);
+    foreach ($form_state['values']['credentials'] as $i => $c) {
+        foreach ($c['products'] as $product => $status) {
+            if ($form['#credential_original_values']['credentials'][$i]['products'][$product] !== $status) {
+                $approver->setKeyStatusforAPIProduct($c['consumerKey'], $product, $status);
+            }
+        }
+    }
+    /**
+     *
+     * Reset the values in the cache for this Developer or Company
+     *
+     */
+    $context = [];
+    $dev_or_company = [];
+    $dev_app_obj = new \Apigee\ManagementAPI\DeveloperApp($config, '');
+    $dev_app_obj = $dev_app_obj->loadByAppId($app_id);
+    if ($dev_app_obj instanceof \Apigee\ManagementAPI\CompanyApp) {
+        $dev_or_company[$dev_app_obj->getCompanyName()] = 'Company';
+    } else {
+        $dev_or_company[$dev_app_obj->getDeveloperMail()] = 'Developer';
+    }
+    _apigee_appdashboard_sync_developer_apps_from_edge($dev_or_company, [], $context);
+    $form_state['redirect'] = apigee_appdashboard_VIEW_PATH;
+}
+
+function apigee_appdashboard_form_devconnect_developer_apps_edit_form_alter(&$form, $form_state)
+{
+    if (strpos(current_path(), apigee_appdashboard_VIEW_PATH) === 0) {
+        $form['#disabled'] = TRUE;
+    }
+}
+
+/**
+ *
+ * Delete cache information on app delete
+ * @param $results
+ * @param $form_state
+ * @return bool
+ */
+function apigee_appdashboard_devconnect_developer_app_delete($results, $form_state)
+{
+    db_delete('apigee_appdashboard')->condition('app_id', $results['data']['appId'])->execute();
+    return TRUE;
+}
+
+/**
+ * Implements hook_devconnect_developer_app_save
+ *
+ * Update the cache table on app edit / save
+ *
+ * @param array $results
+ * @param array $form_state
+ * @return bool
+ */
+function apigee_appdashboard_devconnect_developer_app_save(array $results, array &$form_state)
+{
+    $app = new \Apigee\ManagementAPI\DeveloperApp(devconnect_default_org_config());
+    $app = $app->loadByAppId($form_state['storage']['entity']->appId);
+    $dev_or_company = [];
+    if ($app instanceof \Apigee\ManagementAPI\CompanyApp) {
+        $dev_or_company[$app->getCompanyName()] = 'Company';
+    }
+    if ($app instanceof \Apigee\ManagementAPI\DeveloperApp) {
+        $dev_or_company[$app->getDeveloperMail()] = 'Developer';
+    }
+    $context = [];
+    _apigee_appdashboard_sync_developer_apps_from_edge($dev_or_company, [], $context);
+    return TRUE;
+}
+
+/**
+ * make company internal name 60 characters long
+ * @param $form
+ * @param $form_state
+ */
+function apigee_appdashboard_form_apigee_company_company_form_alter(&$form, $form_state)
+{
+    $form['company_internal_name']['#maxlength'] = 60;
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function apigee_appdashboard_views_api()
+{
+    return [
+        'api' => 3,
+        'path' => drupal_get_path('module', 'apigee_appdashboard') . '/views',
+    ];
+}
+
+/**
+ * Implements hook_user_login().
+ */
+function apigee_appdashboard_user_login(&$edit, $account)
+{
+    $account = user_load($account->uid);
+    $role = user_role_load_by_name(APIGEE_APPDASHBOARD_APPROVER_ROLE);
+    if(count(views_get_view_result('api_product_dashboard')) > 0) {
+        if(!isset($account->roles[$role->rid])) {
+            $account->roles[$role->rid] = $role->name;
+            user_save($account);
+        }
+
+    } else {
+        if(isset($account->roles[$role->rid])) {
+            unset($account->roles[$role->rid]);
+            user_save($account);
+        }
+    }
+}
+
+
+/**
+ * Implements hook_init().
+ */
+function apigee_appdashboard_init()
+{
+    if (variable_get('apigee_appdashboard_needs_rebuild', false) && (current_path() !== 'admin/config/apigee_extras/appdashboard')) {
+        if(user_access("administer site configuration")) {
+            drupal_set_message(t("App Dashboard needs to be resynced. Please !click_here", ['!click_here' => l("click here", "admin/config/apigee_extras/appdashboard")]), "error", false);
+        }else if(user_access("administer apigee-extras appdashboard")) {
+            drupal_set_message(t("App Dashboard needs to be resynced. Please contact the site administrator to have this corrected."), "error", false);
+        }
+    }
+}

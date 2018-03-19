@@ -1,0 +1,157 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for App Dashboard module.
+ */
+
+use Apigee\ManagementAPI\DeveloperApp;
+
+/**
+ * Implements hook_schema().
+ */
+function apigee_appdashboard_schema()
+{
+    $schema['apigee_appdashboard'] = [
+        'description' => '"Cached" Developer App information.',
+        'fields' => [
+            'name' => [
+                'description' => 'App name',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => TRUE,
+            ],
+            'app_id' => [
+                'description' => 'Primary key: unique App ID.',
+                'type' => 'char',
+                // UUID including hyphens.
+                'length' => 36,
+                'not null' => TRUE,
+            ],
+            'email' => [
+                'description' => 'Developer Email',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => FALSE,
+            ],
+            'company' => [
+                'description' => 'Company',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => FALSE,
+            ],
+            'display_name' => [
+                'description' => 'App display name',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => TRUE,
+            ],
+            'created_at' => [
+                'description' => 'Unix timestamp of app creation date',
+                'type' => 'int',
+                'not null' => TRUE,
+            ],
+            'modified_at' => [
+                'description' => 'Unix timestamp of app modification date',
+                'type' => 'int',
+                'not null' => FALSE,
+            ],
+            'overall_status' => [
+                'description' => 'OverAll status of the App',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => TRUE,
+                'default' => 'pending',
+            ],
+            'org_name' => [
+                'description' => 'Org name',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => FALSE,
+            ],
+            'uid' => [
+                'description' => 'The {users}.uid that owns this node; initially, this is the user that created it.',
+                'type' => 'int',
+                'not null' => TRUE,
+                'default' => 0,
+            ],
+        ],
+        'primary key' => ['app_id'],
+        'foreign keys' => [
+            'app_owner' => [
+                'table' => 'users',
+                'columns' => ['uid' => 'uid'],
+            ],
+        ],
+    ];
+    $schema['apigee_appdashboard_app_product_usage'] = [
+        'description' => 'App to product mapping.',
+        'fields' => [
+            'product_name' => [
+                'description' => 'API product name',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => TRUE,
+            ],
+            'product_status' => [
+                'description' => 'Status of the API Product on the app',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => TRUE,
+            ],
+            'app_id' => [
+                'description' => 'Primary key: unique App ID.',
+                'type' => 'char',
+                // UUID including hyphens.
+                'length' => 36,
+                'not null' => TRUE,
+            ],
+            'delta' => [
+                'description' => 'The delta for multiple credentials',
+                'type' => 'int',
+                'not null' => TRUE,
+                'default' => 0,
+            ],
+            'issued_at' => [
+                'description' => 'Unix timestamp of credential issue date',
+                'type' => 'int',
+                'not null' => TRUE,
+            ],
+            'expires_at' => [
+                'description' => 'Unix timestamp of credential expiry date',
+                'type' => 'int',
+                'not null' => FALSE,
+            ],
+        ],
+        'unique keys' => [
+            'product_app' => ['delta', 'app_id', 'product_name'],
+        ],
+        'foreign keys' => [
+            'apigee_appdashboard_app_id' => ['table' => 'apigee_appdashboard', 'columns' => ['app_id' => 'app_id']],
+        ]
+    ];
+    return $schema;
+}
+
+
+function apigee_appdashboard_install()
+{
+    $role = user_role_load_by_name(APIGEE_APPDASHBOARD_APPROVER_ROLE);
+    if ($role == FALSE) {
+        $role = new stdClass();
+        $role->name = APIGEE_APPDASHBOARD_APPROVER_ROLE;
+        user_role_save($role);
+    }
+    user_role_grant_permissions($role->rid, ["administer apigee-extras appdashboard"]);
+    variable_set("apigee_appdashboard_needs_rebuild", true);
+}
+
+function apigee_appdashboard_enable() {
+    variable_set("apigee_appdashboard_needs_rebuild", true);
+}
+
+function apigee_appdashboard_disable() {
+}
+
+function apigee_appdashboard_uninstall() {
+
+}

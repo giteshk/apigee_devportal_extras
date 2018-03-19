@@ -1,0 +1,75 @@
+<?php
+
+function apiproduct_catalog_install() {
+    $schema = [];
+    if(module_exists("apigee_appdashboard")) {
+      apiproduct_catalog_schema_alter($schema);
+      if (!db_field_exists('apigee_appdashboard_app_product_usage', 'nid')) {
+        db_add_field('apigee_appdashboard_app_product_usage', 'nid', $schema['apigee_appdashboard_app_product_usage']['fields']['nid']);
+      }
+    }
+    apiproduct_catalog_enable();
+}
+
+function apiproduct_catalog_enable() {
+
+    if(module_exists('apigee_appdashboard')){
+
+      $views_status = variable_get('views_defaults', array());
+      $views_status['apigee_extras_app_dashboard'] = true;
+      $views_status['api_product_catalog_owner_based_appdashboard'] = false;
+      variable_set('views_defaults', $views_status);
+      views_invalidate_cache();
+
+    }
+    variable_set('apiproduct_catalog_force_sync', true);
+}
+
+function apiproduct_catalog_disable() {
+  if(module_exists('apigee_appdashboard')){
+    $views_status = variable_get('views_defaults', array());
+    $views_status['apigee_extras_app_dashboard'] = false;
+    $views_status['api_product_catalog_owner_based_appdashboard'] = true;
+    variable_set('views_defaults', $views_status);
+    views_invalidate_cache();
+  }
+    node_access_needs_rebuild(true);
+}
+
+function apiproduct_catalog_uninstall() {
+    if(db_field_exists('apigee_appdashboard_app_product_usage', 'nid')) {
+        db_drop_field('apigee_appdashboard_app_product_usage', 'nid');
+    }
+    node_access_needs_rebuild(true);
+}
+
+function apiproduct_catalog_schema_alter(&$schema){
+    $schema['apigee_appdashboard_app_product_usage']['fields']['nid'] =
+        array(
+            'description' => 'The {node} this version belongs to.',
+            'type' => 'int',
+            'unsigned' => TRUE,
+            'not null' => TRUE,
+            'default' => 0,
+        );
+}
+
+function apiproduct_catalog_modules_installed($modules){
+    if(in_array('apigee_appdashboard', $modules)){
+      apiproduct_catalog_install();
+      $views_status = variable_get('views_defaults', array());
+      $views_status['apigee_extras_app_dashboard'] = true;
+      $views_status['api_product_catalog_owner_based_appdashboard'] = false;
+      variable_set('views_defaults', $views_status);
+      views_invalidate_cache();
+    }
+}
+
+function apiproduct_catalog_modules_disabled($modules){
+  if(in_array('apigee_appdashboard', $modules)){
+    $views_status = variable_get('views_defaults', array());
+    $views_status['api_product_catalog_owner_based_appdashboard'] = true;
+    variable_set('views_defaults', $views_status);
+    views_invalidate_cache();
+  }
+}

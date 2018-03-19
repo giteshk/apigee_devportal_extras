@@ -1,0 +1,91 @@
+<?php
+
+
+/**
+ * Implements hook_menu().
+ */
+function apigee_devconnect_readonly_sysadmin_menu()
+{
+    $items = array();
+    $items['admin/config/apigee_extras/readonly_sysadmin'] = array(
+        'title' => 'Readonly SysAdmin Settings',
+        'description' => 'Use this to set the readonly sysadmin credentials in the portal',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => ['apigee_devconnect_readonly_sysadmin_admin_form'],
+        'access arguments' => array('administer organization settings'),
+        'file' => 'apigee_devconnect_readonly_sysadmin.admin.inc',
+    );
+    return $items;
+}
+
+
+/**
+ * Returns the location of the config file
+ */
+function _apigee_devconnect_readonly_sysadmin_config_file()
+{
+    $config_file = drupal_static(__FUNCTION__, '');
+    if (empty($config_file)) {
+        $default_private_dir = variable_get('file_private_path', 'sites/default/files/private');
+        $private_dir = variable_get('apigee_credential_dir', $default_private_dir);
+
+        if (substr($private_dir, 0, 1) == '/') {
+            $config_file = $private_dir . '/.readonly_sysadmin';
+        } else {
+            $config_file = DRUPAL_ROOT . '/' . $private_dir . '/.readonly_sysadmin';
+        }
+    }
+    return $config_file;
+}
+
+
+/**
+ * Implements hook_devconnect_org_settings_alter().
+ *
+ * Allow the ability to add readonly_admin settings to read the user's roles
+ */
+function apigee_devconnect_readonly_sysadmin_devconnect_org_settings_alter(&$org_settings, $requested_org)
+{
+    if ($requested_org !== 'readonly_admin') {
+        return;
+    }
+
+    $custom_config = _apigee_devconnect_readonly_sysadmin_credentials();
+
+    $org_settings['user'] = $custom_config['user'];
+    $org_settings['pass'] = $custom_config['pass'];
+}
+
+/**
+ * Fetch and cache the credentials from the .readonly_sysadmin file
+ *
+ * @return array|mixed
+ */
+function _apigee_devconnect_readonly_sysadmin_credentials()
+{
+    $org_settings = &drupal_static(__FUNCTION__, array());
+
+    if (empty($org_settings)) {
+
+        $org_settings['user'] = "";
+        $org_settings['pass'] = "";
+        $config_file = _apigee_devconnect_readonly_sysadmin_config_file();
+        if (file_exists($config_file)) {
+            $encrypted = file_get_contents($config_file);
+            if ($encrypted) {
+                try {
+                    $decrypted = \Drupal\devconnect\Crypto::decrypt($encrypted);
+                    if ($decrypted) {
+                        $custom_vars = @unserialize($decrypted);
+                        if (is_array($custom_vars)) {
+                            $org_settings['user'] = $custom_vars['username'];
+                            $org_settings['pass'] = $custom_vars['password'];
+                        }
+                    }
+                } catch (Exception $e) {
+                }
+            }
+        }
+    }
+    return $org_settings;
+}

@@ -1,0 +1,668 @@
+<?php
+/**
+ * @file
+ * Code for the APIProduct Catalog feature.
+ */
+
+include_once 'apiproduct_catalog.features.inc';
+
+/**
+ * Implements hook_menu().
+ */
+function apiproduct_catalog_menu()
+{
+    $items = [];
+    $items['admin/config/apigee_extras/apiproduct_catalog'] = [
+        'title' => 'API Product Catalog Settings',
+        'description' => 'Settings for API Product Catalog visibility',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => ['apiproduct_catalog_admin_form'],
+        'access arguments' => ['administer organization settings'],
+        'file' => 'apiproduct_catalog.admin.inc',
+    ];
+    $items['admin/config/apigee_extras/apiproduct_catalog/reset'] = [
+        'title' => 'Reset Artifacts',
+        'description' => 'Deletes all artifacts that have been synced from edge',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => ['apiproduct_catalog_admin_reset_form'],
+        'access arguments' => ['administer organization settings'],
+        'file' => 'apiproduct_catalog.admin.inc',
+    ];
+    return $items;
+}
+
+
+/**
+ * Implements hook_node_grants().
+ */
+function apiproduct_catalog_node_grants($account, $op)
+{
+    return ['apiproduct_catalog_rid' => array_keys($account->roles)];
+}
+
+/**
+ * Return the variable with the correct values
+ * @return null
+ */
+function _apiproduct_catalog_product_access_mapping()
+{
+    $default = [
+        'public' => [
+            DRUPAL_ANONYMOUS_RID => DRUPAL_ANONYMOUS_RID,
+            DRUPAL_AUTHENTICATED_RID => DRUPAL_AUTHENTICATED_RID
+        ]
+    ];
+    return variable_get('apiproduct_catalog_product_access_mapping', $default);
+}
+
+/**
+ * Implements hook_node_access_records().
+ *
+ */
+function apiproduct_catalog_node_access_records($node)
+{
+    $grants = [];
+    if ($node->status) {
+        if ($node->type == 'edge_api_product') {
+            $var = _apiproduct_catalog_product_access_mapping();
+            $access = $node->field_access_type[LANGUAGE_NONE][0]['value'];
+            if (isset($var[$access])) {
+                foreach ($var[$access] as $key => $val) {
+                    if ($key == $val) {
+                        $grants[] = [
+                            'realm' => 'apiproduct_catalog_rid',
+                            'gid' => $key,
+                            'grant_view' => 1,
+                            'grant_update' => 0,
+                            'grant_delete' => 0,
+                            'priority' => 0,
+                        ];
+                    }
+                }
+            }
+        } else if ($node->type == 'smart_method') {
+            $model_tid = $node->field_smart_method_model[LANGUAGE_NONE][0]['tid'];
+            $query = new EntityFieldQuery();
+
+            //Load the API Product nodes using the current model
+            $result = $query->entityCondition("entity_type", "node")
+                ->entityCondition("bundle", "edge_api_product")
+                ->fieldCondition("field_smart_method_model", 'tid', $model_tid, '=')
+                ->addTag('DANGEROUS_ACCESS_CHECK_OPT_OUT')
+                ->execute();
+
+            if (empty($result['node'])) {
+                return $grants;
+            }
+            $nodes = node_load_multiple(array_keys($result['node']));
+            foreach ($nodes as $api_product_node) {
+                /**
+                 * Load the node access records from this module for API Product node
+                 * and apply to the smartdocs nodes
+                 */
+                $records = apiproduct_catalog_node_access_records($api_product_node);
+                foreach ($records as $record) {
+                    $key = $record['realm'] . ":" . $record['gid'];
+                    /**
+                     * If there are multiple entries the entry which gives the user access to view will persist
+                     */
+                    if (!isset($grants[$key]) || ($grants[$key]['grant_view'] != 1 && $record['grant_view'] == 1)) {
+                        //Make sure the record has a read access if there are repeated entries.
+                        $grants[$key] = $record;
+                    }
+                }
+            }
+            $grants = array_values($grants);
+        }
+    }
+    return $grants;
+}
+
+/**
+ * Implements hook_cron_queue_info().
+ */
+function apiproduct_catalog_cron_queue_info()
+{
+    $queues['edge_apiproduct_updates'] = [
+        'worker callback' => '_apiproduct_catalog_update_worker',
+        'time' => 60,
+    ];
+    $queues['edge_apiproduct_unpublish'] = [
+        'worker callback' => '_apiproduct_catalog_unpublish_worker',
+        'time' => 60,
+
+    ];
+    $queues['edge_apiproduct_creates'] = [
+        'worker callback' => '_apiproduct_catalog_create_worker',
+        'time' => 60,
+
+    ];
+    return $queues;
+}
+
+/*
+ * Implements hook_cron().
+ */
+function apiproduct_catalog_cron()
+{
+    /**
+     * Get the information from the DB since it might take longer to load all the nodes in the DB.
+     */
+    $query = db_select('field_data_field_edge_product_name', 'a');
+    $query->join('node', 'n', 'n.nid = a.entity_id');
+    $query->fields('a', ['field_edge_product_name_value', 'entity_id'])
+        ->fields('n', ['status', 'changed'])
+        ->condition('entity_type', 'node')
+        ->condition('bundle', 'edge_api_product');
+    $apiproducts_in_db = $query->execute()->fetchAllAssoc('field_edge_product_name_value');
+
+    /**
+     *  Get all the products in edge and make sure they have the access attribute
+     */
+    $apiproducts_in_edge = entity_load("api_product", array(), array('show_private' => TRUE), true);
+    //Sort by created date
+    uasort($apiproducts_in_edge, function ($a, $b) {
+        if ($a->createdAt == $b->createdAt) {
+            return 0;
+        }
+        return $a->createdAt < $b->createdAt ? -1 : 1;
+    });
+    //Make sure the products have some default values for access custom attributes
+    array_walk($apiproducts_in_edge, function ($product, $key) {
+        if (!isset($product->attributes['access'])) {
+            $product->attributes['access'] = 'public';
+        }
+    });
+
+    /**
+     *  Create the three different Queues [unpublish (delete) , update, create] items
+     */
+    $unpublish_queue = DrupalQueue::get('edge_apiproduct_unpublish');
+    $update_queue = DrupalQueue::get('edge_apiproduct_updates');
+    $create_queue = DrupalQueue::get('edge_apiproduct_creates');
+
+    $force_sync = variable_get("apiproduct_catalog_force_sync", false);
+    foreach ($apiproducts_in_edge as $product_name => $product) {
+        if (isset($apiproducts_in_db[$product_name])) {
+            /**
+             *  Since the API Product exists we try to update it if it's unpublished
+             *  or if the product has been updated in edge but not in portal
+             */
+            if ($force_sync || $apiproducts_in_db[$product_name]->status == "0" || ($apiproducts_in_db[$product_name]->changed < round($product->modifiedAt / 1000))) {
+                $update_queue->createItem(['nid' => $apiproducts_in_db[$product_name]->entity_id, 'edge_product' => $product]);
+            }
+            unset($apiproducts_in_db[$product_name]);
+        } else {
+            /**
+             * New api product
+             */
+            $create_queue->createItem($product);
+        }
+    }
+    /**
+     * Remaining API Products need to be unpublished since they were not present in edge
+     *
+     * May have been deleted. But we don't delete the nodes since it may have configuration information.
+     *
+     */
+    foreach ($apiproducts_in_db as $product_name => $product) {
+        $unpublish_queue->createItem($apiproducts_in_db[$product_name]->entity_id);
+    }
+    variable_set("apiproduct_catalog_force_sync", false);
+}
+
+/**
+ * Worker function for updating nodes.
+ *
+ * @param $item
+ */
+function _apiproduct_catalog_update_worker($item)
+{
+    return _apiproduct_catalog_create_worker($item['edge_product'], $item['nid']);
+}
+
+/**
+ * Worker function for unpublishing nodes
+ *
+ * @param $nid
+ * @return bool|void
+ * @throws Exception
+ */
+function _apiproduct_catalog_unpublish_worker($nid)
+{
+    $node = node_load($nid);
+    if ($node->status !== 0) {
+        $node->status = 0;
+        return node_save($node);
+    }
+    return true;
+}
+
+/**
+ * Create node function
+ *
+ * @param $product
+ * @param null $nid
+ * @throws Exception
+ */
+function _apiproduct_catalog_create_worker($product, $nid = null)
+{
+
+    static $smartdocs_model_vocab;
+    if (!isset($smartdocs_model_vocab)) {
+        $smartdocs_model_vocab =
+            taxonomy_vocabulary_machine_name_load('smartdocs_models');
+    }
+    static $api_product_categories_vocab;
+    if (!isset($api_product_categories_vocab)) {
+        $api_product_categories_vocab =
+            taxonomy_vocabulary_machine_name_load('api_product_categories');
+    }
+    static $models_published;
+    if (!isset($models_published)) {
+        foreach (taxonomy_term_load_multiple([], ['vid' => $smartdocs_model_vocab->vid]) as $model) {
+            $models_published[$model->name] = $model->tid;
+        }
+    }
+    static $api_product_categories_published;
+    if (!isset($api_product_categories_published)) {
+        $api_product_categories_published = [];
+        foreach (taxonomy_term_load_multiple(array(), array('vid' => $api_product_categories_vocab->vid)) as $category) {
+            $api_product_categories_published[$category->name] = $category->tid;
+        }
+    }
+
+    /**
+     * If there is an existing node we don't update the description
+     */
+    if ($nid !== null) {
+        $node = node_load($nid);
+    } else {
+        $node = new stdClass();
+        $node->type = 'edge_api_product';
+        $node->nid = null;
+        $node->body[LANGUAGE_NONE][0]['value'] = $product->description;
+    }
+    $node->status = 1;
+    /**
+     * Sync the node from the entries in Edge.
+     */
+    $node->title = $product->displayName;
+    $node->field_access_type[LANGUAGE_NONE][0]['value'] = $product->attributes['access'];
+    $node->field_edge_product_name[LANGUAGE_NONE][0]['value'] = $product->name;
+    $node->field_smart_method_model[LANGUAGE_NONE] = [];
+    foreach ($product->proxies as $proxy) {
+        if (!isset($models_published[$proxy])) {
+            /**
+             * We will be creating empty smartdocs models.
+             * This is to get around the issue of checking every field on the node before deciding
+             * whether the node has changed. We only rely on the changed date.
+             */
+            $term = new stdClass();
+            $term->vid = $smartdocs_model_vocab->vid;
+            $term->name = $proxy;
+            taxonomy_term_save($term);
+            $models_published[$proxy] = $term->tid;
+        }
+        $node->field_smart_method_model[LANGUAGE_NONE][] = ['tid' => $models_published[$proxy]];
+    }
+    /**
+     * Figure out which of the Edge product categories are published in portal
+     */
+    $categories_from_edge = !empty($product->attributes['categories']) ? explode(",", $product->attributes['categories']) : [];
+    foreach ($categories_from_edge as $_key => $_category) {
+        $categories_from_edge[$_key] = trim($_category);
+    }
+
+    $node->field_product_categories[LANGUAGE_NONE] = [];
+    foreach ($categories_from_edge as $_category) {
+        if (!isset($api_product_categories_published[$_category])) {
+            $term = new stdClass();
+            $term->vid = $api_product_categories_vocab->vid;
+            $term->name = $_category;
+            taxonomy_term_save($term);
+            $api_product_categories_published[$_category] = $term->tid;
+        }
+        $node->field_product_categories[LANGUAGE_NONE][] = ['tid' => $api_product_categories_published[$_category]];
+    }
+
+    /**
+     * Invoke presave hooks to let other modules write into the product node anything they want.
+     *  Also pass in the product object from edge.
+     */
+    drupal_alter("apiproduct_catalog_node_presave", $node, $product);
+
+    node_save($node);
+
+    module_invoke_all("apiproduct_catalog_node_postsave", $node, $product);
+
+    return true;
+}
+
+/**
+ * Implements hook_node_presave().
+ */
+function apiproduct_catalog_node_presave($node)
+{
+    if ($node->type == 'edge_api_product' && (empty($node->nid) || $node->is_new)) {
+        $query = new EntityFieldQuery();
+
+        //Load the API Product nodes using the current model
+        $result = $query->entityCondition("entity_type", "node")
+            ->entityCondition("bundle", "edge_api_product")
+            ->fieldCondition("field_edge_product_name", 'value', $node->field_edge_product_name[LANGUAGE_NONE][0]['value'], '=')
+            ->addTag('DANGEROUS_ACCESS_CHECK_OPT_OUT')
+            ->execute();
+        if (!empty($result['node'])) {
+            throw  new Exception("API Product node already exists");
+        }
+    }
+}
+
+
+/**
+ * Implements hook_node_insert().
+ */
+function apiproduct_catalog_node_insert($node)
+{
+    apiproduct_catalog_node_update($node);
+}
+
+/**
+ * Implements hook_node_delete().
+ */
+function apiproduct_catalog_node_delete($node)
+{
+    apiproduct_catalog_node_insert($node);
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function apiproduct_catalog_node_update($node)
+{
+    if ($node->status == 1 && $node->type == 'edge_api_product') {
+        if (isset($node->field_smart_method_model[LANGUAGE_NONE])) {
+            foreach ($node->field_smart_method_model[LANGUAGE_NONE] as $proxy) {
+                _apiproduct_catalog_node_acquite_grants($proxy['tid']);
+            }
+        }
+    }
+}
+
+/**
+ * For the model id lookup the SmartDocs Method nodes and acquire grants for them.
+ *
+ * @param $model_id
+ */
+function _apiproduct_catalog_node_acquite_grants($model_id)
+{
+    $query = new EntityFieldQuery();
+    $result = $query->entityCondition("entity_type", "node")
+        ->entityCondition("bundle", "smart_method")
+        ->fieldCondition("field_smart_method_model", 'tid', $model_id, '=')
+        ->execute();
+    if (isset($result['node'])) {
+        foreach ($result['node'] as $nid => $value) {
+            $node = node_load($nid);
+            node_access_acquire_grants($node, TRUE);
+        }
+    }
+}
+
+
+/**
+ * Implements hook_apiproduct_list_alter().
+ */
+function apiproduct_catalog_apiproduct_list_alter(array &$public_api_products, $account = NULL, $private_api_products = array())
+{
+
+    $query = new EntityFieldQuery();
+
+    $result = $query->entityCondition("entity_type", 'node')
+        ->entityCondition("bundle", 'edge_api_product')
+        ->addTag("node_access")
+        ->execute();
+    if (!isset($result['node'])) {
+        $public_api_products = [];
+    }
+
+    $nodes = node_load_multiple(array_keys($result['node']));
+    $new_products = [];
+    foreach ($nodes as $node) {
+        $edge_product_name = $node->field_edge_product_name[LANGUAGE_NONE][0]['value'];
+        if (isset($public_api_products[$edge_product_name])) {
+            $new_products[$edge_product_name] = $public_api_products[$edge_product_name];
+        }
+        if (isset($private_api_products[$edge_product_name])) {
+            $new_products[$edge_product_name] = $private_api_products[$edge_product_name];
+        }
+    }
+    usort($new_products, function ($a, $b) {
+        strcmp($a->displayName, $b->displayName);
+    });
+    $public_api_products = $new_products;
+}
+
+
+/**
+ * Disable the edit of edge_product_name field
+ *
+ * @param $form
+ * @param $form_state
+ */
+function apiproduct_catalog_form_edge_api_product_node_form_alter(&$form, $form_state)
+{
+    if (!empty($form['nid']['#value'])) {
+        $form['field_edge_product_name']['#access'] = false;
+    }
+}
+
+/**
+ * Implements hook_user_login().
+ */
+function apiproduct_catalog_user_login(&$edit, $account)
+{
+    $account = user_load($account->uid);
+    $role = user_role_load_by_name('product owner');
+    if(count(views_get_view_result('api_product_dashboard')) > 0) {
+        if(!isset($account->roles[$role->rid])) {
+            $account->roles[$role->rid] = $role->name;
+            user_save($account);
+        }
+
+    } else {
+        if(isset($account->roles[$role->rid])) {
+            unset($account->roles[$role->rid]);
+            user_save($account);
+        }
+    }
+    cache_clear_all("api_product_dashboard_products:" . $account->uid, 'cache');
+}
+
+/**
+ * Implements hook_permission().
+ */
+function apiproduct_catalog_permission()
+{
+    return [
+        'administer api products in catalog' => [
+            'title' => 'Administer API Products in catalog[Apigee Extras]',
+        ]
+    ];
+}
+
+/**
+ * @param $form
+ * @param $form_state
+ */
+function apiproduct_catalog_form_apigee_appdashboard_key_form_alter(&$form, $form_state){
+    $product_names = _apiproduct_catalog_editable_api_products();
+    foreach($form['credentials'] as &$credential){
+        foreach($credential['products'] as $product_name => &$field) {
+            if(!in_array($product_name, $product_names)){
+                $field['#disabled'] = true;
+            }
+        }
+
+    }
+}
+
+/**
+ * Implements hook_menu_alter().
+ */
+function apiproduct_catalog_menu_alter(&$items)
+{
+    if(module_exists('apigee_appdashboard')) {
+        $index = count(explode("/", apigee_appdashboard_VIEW_PATH));
+        $items[apigee_appdashboard_VIEW_PATH . '/app-details/%apigee_appdashboard_app/view']['access callback'] = 'apiproduct_catalog_apigee_appdashboard_callback';
+        $items[apigee_appdashboard_VIEW_PATH . '/app-details/%apigee_appdashboard_app/view']['access arguments'] = [$index + 1];
+    }
+}
+
+function apiproduct_catalog_apigee_appdashboard_callback($app){
+    $allowed_api_products = _apiproduct_catalog_editable_api_products();
+    foreach($app->credentials as $c){
+        foreach($c['apiProducts'] as $p) {
+            if(in_array($p['apiproduct'], $allowed_api_products)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Implements hook_user_logout().
+ */
+function apiproduct_catalog_user_logout($account)
+{
+    cache_clear_all("api_product_dashboard_products:" . $account->uid, 'cache');
+}
+
+/**
+ * @return mixed
+ */
+function _apiproduct_catalog_editable_api_products(){
+    global $user;
+    $cid = "api_product_dashboard_products:" . $user->uid;
+    $static = &drupal_static(__FUNCTION__, []);
+    if(!isset($static[$user->uid])) {
+        $products = [];
+        if(($cache = cache_get($cid, 'cache')) === FALSE) {
+            foreach(views_get_view_result('api_product_dashboard') as $row) {
+                if (isset($row->field_field_edge_product_name[0]['raw']['value']) && !empty($row->field_field_edge_product_name[0]['raw']['value'])) {
+                    $products[] = $row->field_field_edge_product_name[0]['raw']['value'];
+                }
+            }
+            cache_set($cid, $products, 'cache');
+        } else {
+            $products = $cache->data;
+        }
+        $static[$user->uid] = $products;
+    }
+    return $static[$user->uid];
+}
+
+/**
+ * Implements hook_devconnect_developer_app_save().
+ */
+function apiproduct_catalog_devconnect_developer_app_save(array $results, array &$form_state)
+{
+    cache_clear_all("api_product_dashboard_products:*", 'cache', true);
+}
+
+/**
+ * Implements hook_init().
+ */
+function apiproduct_catalog_init()
+{
+    if(user_access("administer site configuration")) {
+        if (variable_get('apiproduct_catalog_force_sync', false) && (current_path() !== 'admin/reports/status/run-cron')) {
+            drupal_set_message(t("Please run cron to ensure that the catalog is up to date. !cron_link ",['!cron_link' => l("Click here", "admin/reports/status/run-cron")]), "error", false);
+        }
+        if (node_access_needs_rebuild()  && (current_path() !== 'admin/reports/status/rebuild')) {
+            drupal_set_message(t("Please rebuild node permissions to ensure content is properly secure. !rebuild_permission_link",['!rebuild_permission_link' => l("Click here", "admin/reports/status/rebuild")]), "error", false);
+        }
+    }
+}
+
+/**
+ * Implements hook_apigee_appdashboard_post_sync().
+ */
+function apiproduct_catalog_apigee_appdashboard_post_sync()
+{
+    if(module_exists("apigee_appdashboard")) {
+        $result = db_select('field_data_field_edge_product_name', 'a')
+            ->fields('a', ['entity_id', 'field_edge_product_name_value'])
+            ->execute();
+        foreach ($result as $r) {
+            db_update("apigee_appdashboard_app_product_usage")->fields(['nid' => $r->entity_id])
+                ->condition('product_name', $r->field_edge_product_name_value)
+                ->execute();
+        }
+    }
+}
+
+/**
+ *
+ * Update the display name, description and model categories from the swagger files
+ *
+ * Model categories is an array of strings saved on the x-categories element under the swagger info element
+ *
+ *
+ * Implements hook_smartdocs_model_import().
+ */
+function apiproduct_catalog_smartdocs_model_import($raw_source, $mime_type, $document_format, Apigee\SmartDocs\Model $model, $source)
+{
+
+  if($document_format !== 'swagger') {
+    return;
+  }
+
+  if($mime_type === 'application/yaml') {
+    $swagger_json = yaml_parse($raw_source);
+  } else {
+    $swagger_json = json_decode($raw_source, true);
+  }
+  $vocabs = taxonomy_vocabulary_get_names();
+  $smartdocs_vocab = $vocabs['smartdocs_models'];
+  $models = taxonomy_term_load_multiple([], ['vid' => $smartdocs_vocab->vid, 'name' => $model->getName()]);
+  $model_term = null;
+  if(empty($models)) {
+    $model_term = new stdClass();
+    $model_term->name = $model->getName();
+    $model_term->vid = $smartdocs_vocab->vid;
+  } else {
+    $model_term = reset($models);
+  }
+  $model_term->field_model_display_name[LANGUAGE_NONE] = [['value' => $swagger_json['info']['title']?:$model_term->name]];
+  $model->setDisplayName($model_term->field_model_display_name[LANGUAGE_NONE][0]['value']);
+
+  $formats = filter_formats();
+  $model_term->description = $swagger_json['info']['description']?:$model_term->description;
+  $model_term->format = in_array('markdown', array_keys($formats)) ? 'markdown' : 'full_html';
+  $model->setDescription(check_markup($model_term->description, $model_term->format));
+
+  $model_term->field_model_category = [];
+  if(!empty($swagger_json['info']['x-categories'])) {
+    $conditions = ['vid' => $vocabs['smartdocs_model_categories']->vid];
+
+    foreach ($swagger_json['info']['x-categories'] as $category) {
+      $conditions['name'] = $category;
+      $model_categories = taxonomy_term_load_multiple([], $conditions);
+      $model_category = new stdClass();
+      if(empty($model_categories)) {
+        $model_category->name = $category;
+        $model_category->vid = $vocabs['smartdocs_model_categories']->vid;
+        taxonomy_term_save($model_category);
+      } else {
+        $model_category = reset($model_categories);
+      }
+      $model_term->field_model_category[LANGUAGE_NONE][] = ['tid' => $model_category->tid];
+    }
+  }
+  taxonomy_term_save($model_term);
+  $model->save(true);
+}
+

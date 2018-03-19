@@ -1,0 +1,9 @@
+name = Apigee Devconnect readonly sysadmin (works with Edge Private Cloud only)
+description = Utility module to accept readonly sysadmin credentials and store them in the file system
+package = Apigee Extras
+core = 7.x
+version = 7.x-1.x
+
+dependencies[] = devconnect
+
+config = admin/config/apigee_extras/readonly_sysadmin

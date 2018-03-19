@@ -1,0 +1,8 @@
+name = APIProduct Catalog - Product Owners
+description = Adds the ability to define product_owner, product_owner_roles and audience_role to Edge attributes and control access
+core = 7.x
+package = Apigee Extras
+version = 7.x-1.0-beta
+dependencies[] = apiproduct_catalog
+dependencies[] = nodeaccess
+files[] = views/apiproduct_catalog_product_owners_handler_filter_node_edit_access.inc

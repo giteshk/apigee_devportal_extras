@@ -1,0 +1,95 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for App Dashboard module.
+ */
+
+use Apigee\ManagementAPI\DeveloperApp;
+
+/**
+ * Implements hook_schema().
+ */
+function apiproduct_catalog_product_owners_schema_alter(&$schema)
+{
+    $schema['product_owner_copy_nodeaccess'] = $schema['nodeaccess'];
+}
+
+function apiproduct_catalog_product_owners_enable(){
+
+  $var = variable_set("nodeaccess-types", []);
+  $var['edge_api_product'] = '1';
+  variable_set("nodeaccess-types", $var);
+
+  //Copy over the values from other table
+  $query = db_select('product_owner_copy_nodeaccess', 'c');
+  $query->leftJoin("nodeaccess", "na", " c.nid = na.nid AND c.realm = na.realm AND c.gid = na.gid ");
+  $result = $query->fields('c')
+    ->execute();
+
+  foreach($result as $row) {
+    drupal_write_record("nodeacess",  $row);
+  }
+    db_truncate("product_owner_copy_nodeaccess")->execute();
+    //Force resync of all the products
+    variable_set("apiproduct_catalog_force_sync", true);
+    node_access_needs_rebuild(TRUE);
+}
+function apiproduct_catalog_product_owners_install()
+{
+    $schema = drupal_get_schema('nodeaccess');
+    db_create_table('product_owner_copy_nodeaccess', $schema);
+    $blank_grants = [];
+    foreach(user_roles() as $rid => $role_name){
+      $blank_grants[] = [
+        'realm' => 'roleaccess_rid',
+        'gid' => $rid,
+        'grant_view' => 0,
+        'grant_update' => 0,
+        'grant_delete' => 0,
+      ];
+    }
+  variable_set('nodeaccess_smart_method', $blank_grants);
+  variable_set('nodeaccess_edge_api_product', $blank_grants);
+
+  apiproduct_catalog_product_owners_enable();
+}
+
+function apiproduct_catalog_product_owners_disable(){
+    /**
+     * We will want to copy over the settings from the table and make a copy to restore
+     */
+    db_truncate("product_owner_copy_nodeaccess")->execute();
+    $copy_query = <<<__SQL__
+    INSERT INTO {product_owner_copy_nodeaccess}
+    SELECT na.* FROM {nodeaccess} na JOIN {node} n ON n.nid = na.nid AND n.type = 'edge_api_product'
+__SQL__;
+    db_query($copy_query);
+    $cleanup_query = <<<__SQL
+    DELETE FROM {nodeaccess} WHERE nid IN (SELECT nid FROM {node} WHERE type = 'edge_api_product')
+__SQL;
+    db_query($cleanup_query);
+    node_access_needs_rebuild(TRUE);
+}
+
+
+function apiproduct_catalog_product_owners_uninstall()
+{
+    db_drop_table("product_owner_copy_nodeaccess");
+    variable_del('nodeaccess_smart_method');
+    variable_del('nodeaccess_edge_api_product');
+    node_access_needs_rebuild(TRUE);
+}
+
+
+function apiproduct_catalog_product_owners_update_7000()
+{
+    apiproduct_catalog_product_owners_install();
+}
+
+
+function apiproduct_catalog_product_owners_update_7001()
+{
+    $schema = drupal_get_schema('nodeaccess');
+    db_create_table('product_owner_copy_nodeaccess', $schema);
+
+}

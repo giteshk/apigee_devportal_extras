@@ -1,0 +1,39 @@
+<?php
+/**
+ * @file
+ *  Install, update, and uninstall functions for Taxonomy Access Control.
+ */
+
+
+/**
+ * Implements hook_schema().
+ */
+function apiproduct_catalog_edge_custom_roles_schema()
+{
+    $schema = array();
+    $schema['api_team_tracker'] = array(
+        'description' => 'Map team name ,which could be strings, to unique numeric ids',
+        'fields' => array(
+            'internal_id' => array(
+                'type' => 'serial',
+                'not null' => TRUE,
+                'description' => "Numeric ID",
+            ),
+            'team_name' => array(
+                'description' => 'Team name',
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => TRUE,
+            ),
+        ),
+        'primary key' => array('internal_id', 'team_name'),
+
+    );
+
+    return $schema;
+}
+
+
+function apiproduct_catalog_edge_custom_roles_install()
+{
+}

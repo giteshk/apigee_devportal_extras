@@ -1,0 +1,11 @@
+name = App Dashboard
+description = Dashboard to manage developer apps in the portal.
+core = 7.x
+package = Apigee Extras
+dependencies[] = context
+dependencies[] = ctools
+dependencies[] = devconnect_developer_apps
+dependencies[] = views
+dependencies[] = views_data_export
+
+files[] = inc/apigee_appdashboard_key_approver.inc
