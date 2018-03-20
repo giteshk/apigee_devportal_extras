@@ -6,4 +6,4 @@ version = 7.x-1.x
 
 dependencies[] = devconnect
 
-config = admin/config/apigee_extras/readonly_sysadmin
+configure = admin/config/apigee_extras/readonly_sysadmin

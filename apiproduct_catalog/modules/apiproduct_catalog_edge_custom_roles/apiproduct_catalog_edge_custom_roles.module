@@ -15,9 +15,10 @@ function apiproduct_catalog_edge_custom_roles_menu()
 {
     $items = array();
     $items['admin/config/apigee_extras/apiproduct_catalog_edge_custom_roles'] = array(
-        'title' => 'Readonly SysAdmin Settings',
-        'description' => 'Use this to set the readonly sysadmin credentials in the portal',
-        'page callback' => 'apiproduct_catalog_edge_custom_roles_settings_form',
+        'title' => 'Edge API Team settings ',
+        'description' => 'Use this to set the pattern for API Teams in Edge',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => ['apiproduct_catalog_edge_custom_roles_settings_form'],
         'access arguments' => array('administer organization settings'),
         'file' => 'apiproduct_catalog_edge_custom_roles.admin.inc',
     );
@@ -150,7 +151,7 @@ function apiproduct_catalog_edge_custom_roles_node_grants($account, $op)
                 }
             } else {
               $team_ids = db_select("edge_users_team_mapping", 'm')
-                            ->fields('m', 'team_id')
+                            ->fields('m', ['team_id'])
                             ->condition('uid', $account->uid)
                             ->execute()->fetchCol();
 
