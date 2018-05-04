@@ -425,21 +425,24 @@ function apiproduct_catalog_apiproduct_list_alter(array &$public_api_products, $
         ->execute();
     if (!isset($result['node'])) {
         $public_api_products = [];
+        return;
+    }
+//    dpm($public_api_products, "public");
+    $list_of_edge_products = [];
+    foreach($public_api_products + $private_api_products as $k=>$e){
+      $list_of_edge_products[trim($k)] = $e;
     }
 
     $nodes = node_load_multiple(array_keys($result['node']));
     $new_products = [];
     foreach ($nodes as $node) {
         $edge_product_name = $node->field_edge_product_name[LANGUAGE_NONE][0]['value'];
-        if (isset($public_api_products[$edge_product_name])) {
-            $new_products[$edge_product_name] = $public_api_products[$edge_product_name];
-        }
-        if (isset($private_api_products[$edge_product_name])) {
-            $new_products[$edge_product_name] = $private_api_products[$edge_product_name];
+        if (isset($list_of_edge_products[$edge_product_name])) {
+            $new_products[$edge_product_name] = $list_of_edge_products[$edge_product_name];
         }
     }
     usort($new_products, function ($a, $b) {
-        strcmp($a->displayName, $b->displayName);
+         return strcmp($a->displayName, $b->displayName);
     });
     $public_api_products = $new_products;
 }
