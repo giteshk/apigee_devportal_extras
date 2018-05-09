@@ -357,6 +357,43 @@ function apiproduct_catalog_field_default_field_instances() {
     ),
   );
 
+  // Exported field_instance:
+  // 'taxonomy_term-smartdocs_models-field_openapi_specification'.
+  $field_instances['taxonomy_term-smartdocs_models-field_openapi_specification'] = array(
+    'bundle' => 'smartdocs_models',
+    'deleted' => 0,
+    'description' => '',
+    'display' => array(
+      'default' => array(
+        'label' => 'above',
+        'module' => 'file',
+        'settings' => array(),
+        'type' => 'file_default',
+        'weight' => 4,
+      ),
+    ),
+    'entity_type' => 'taxonomy_term',
+    'field_name' => 'field_openapi_specification',
+    'label' => 'OpenAPI Specification',
+    'required' => 1,
+    'settings' => array(
+      'description_field' => 0,
+      'file_directory' => 'openapi_files',
+      'file_extensions' => 'json yaml',
+      'max_filesize' => '',
+      'user_register_form' => FALSE,
+    ),
+    'widget' => array(
+      'active' => 1,
+      'module' => 'file',
+      'settings' => array(
+        'progress_indicator' => 'throbber',
+      ),
+      'type' => 'file_generic',
+      'weight' => 34,
+    ),
+  );
+
   // Translatables
   // Included for use with string extractors like potx.
   t('API Docs');
@@ -365,6 +402,7 @@ function apiproduct_catalog_field_default_field_instances() {
   t('Display name');
   t('Model Category');
   t('Model Image');
+  t('OpenAPI Specification');
   t('Product Categories');
   t('Product Image');
   t('edge product name');

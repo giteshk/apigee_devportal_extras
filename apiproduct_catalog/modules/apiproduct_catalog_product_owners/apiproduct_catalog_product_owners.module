@@ -231,3 +231,170 @@ function apiproduct_catalog_product_owners_menu_alter(&$items)
         $items['node/%node/grant']['access arguments'] = array('update', 1);
     }
 }
+
+
+/**
+ * Implements hook_menu
+ *
+ * @return array
+ */
+function apiproduct_catalog_product_owners_menu(){
+  $items = [];
+  $items['node/%node/upload_openapi'] = [
+    'title' => 'Upload Docs',
+    'access callback' => 'node_access',
+    'access arguments' => ['update', 1],
+    'page callback' => 'drupal_get_form',
+    'page arguments' => ['apiproduct_catalog_product_owners_upload_openapi' , 1],
+    'type' => MENU_LOCAL_TASK,
+  ];
+  return $items;
+}
+
+/**
+ * Implements hook_admin_paths
+ * @return array
+ */
+function apiproduct_catalog_product_owners_admin_paths(){
+  return ['node/*/upload_openapi' => TRUE];
+}
+
+/**
+ * Callback function for allowing the product owners to upload openapi specification for their APIs
+ *
+ * @param $form
+ * @param $form_state
+ * @param $node
+ * @return array
+ */
+function apiproduct_catalog_product_owners_upload_openapi($form, $form_state, $node) {
+  $edge_product = $node->field_edge_product_name[LANGUAGE_NONE][0]['value'];
+  $entity = entity_load_single("api_product", $edge_product);
+  $table_data = [
+    'caption' => 'Current specification files',
+    'header' => ['API Name', 'File'],
+    'rows' => [],
+  ];
+
+  foreach($entity->proxies as $proxy) {
+
+    $term = reset(taxonomy_get_term_by_name($proxy, 'smartdocs_models'));
+
+    $url = '';
+    if(!empty($term->field_openapi_specification[LANGUAGE_NONE])) {
+      $file = file_load($term->field_openapi_specification[LANGUAGE_NONE][0]['fid']);
+      $uri = $file->uri;
+      $url = file_create_url($uri);
+    }
+
+    $table_data['rows'][] = [$proxy, ($url == '' ? "missing" : l("Download", $url))];
+  }
+  $form['table']['#markup'] = theme('table', $table_data);
+  $form['proxies'] = [
+    '#title' => 'Select the Proxy you want to attach the specification to ?',
+    '#type' => 'select',
+    '#options' => array_combine($entity->proxies, $entity->proxies),
+  ];
+  $form['file'] = [
+    '#title' => 'Select a file to upload',
+    '#description' => 'Please upload an open api specification',
+    '#type' => 'file',
+    '#upload_location' => 'public://openapi_files/',
+    '#upload_validators' => ['file_validate_extensions' => ['json', 'yaml']],
+  ];
+  $form['submit'] = [
+    '#type' => 'submit',
+    '#value' => 'Submit',
+  ];
+  return $form;
+}
+
+/**
+ *
+ * Submit function which will add the openapi specification in the SmartDocs
+ *
+ * @param $form
+ * @param $form_state
+ * @throws \Apigee\Exceptions\ParameterException
+ */
+function apiproduct_catalog_product_owners_upload_openapi_submit($form, &$form_state){
+  require_once drupal_get_path("module", "smartdocs") . "/smartdocs.admin.inc";
+  $model_name = $form_state['values']['proxies'];
+
+  if(!smartdocs_model_exist($model_name)) {
+    /*
+     * Add a model if it does not exist
+     */
+    $form_add_model = [];
+    $form_state_add_model['values']['model_name'] = $model_name;
+    $form_state_add_model['values']['display_name'] = $model_name;
+    $form_state_add_model['values']['model_description'] = '';
+    smartdocs_add_model_submit($form_add_model, $form_state_add_model);
+  }
+
+  $config = devconnect_default_org_config();
+  $model = new \Apigee\SmartDocs\Model($config);
+  $model->load($model_name);
+
+  if($model->getLatestRevisionNumber() > 0) { //atleast one revision exists
+    /*
+     * Load the current revision and unpublish it
+     */
+    $revision = new \Apigee\SmartDocs\Revision($config, $model->getUuid());
+    $revision->load($model->getLatestRevisionNumber());
+    $selected = [];
+    foreach ($revision->getResources() as $resource) {
+      $method = new \Apigee\SmartDocs\Method($config, $model->getUuid(), $revision->getUuid(), $resource->getUuid());
+      foreach ($method->listMethods() as $m) {
+        $selected[] = $m->getUuid();
+      }
+    }
+    $form_revision_details = [];
+    $form_state_revision_details = [];
+    $form_state_revision_details['values'] = [
+      'model' => $model->toArray(),
+      'operation' => 'unpublish_nodes',
+      'revision' => $revision->toArray(),
+      'methods' => $selected,
+    ];
+    smartdocs_revision_detail_submit($form_revision_details, $form_state_revision_details);
+
+  }
+
+  /*
+   * Import the new version of the model
+   */
+  $form_state['values']['type'] = "swagger_" . array_pop(explode(".", $_FILES['files']['name']['file'])) ;
+  $form_state['values']['model_uuid'] = $model->getUuid();
+  $form_state['values']['upload_type'] = 'file';
+  $form_import_model = [];
+  smartdocs_import_model_submit($form_import_model, $form_state);
+
+  /*
+   * Load the latest version of the model
+   */
+  $model->load($model_name);
+  $revision = new \Apigee\SmartDocs\Revision($config, $model->getUuid());
+  $revision->load($model->getLatestRevisionNumber());
+  $selected = [];
+  foreach($revision->getResources() as $resource) {
+    $method = new \Apigee\SmartDocs\Method($config, $model->getUuid(), $revision->getUuid(), $resource->getUuid());
+    foreach($method->listMethods() as $m){
+      $selected[] = $m->getUuid();
+    }
+  }
+
+  /*
+   * Publish the latest version
+   */
+  $form_revision_details = [];
+  $form_state_revision_details = [];
+  $form_state_revision_details['values'] = [
+    'model' => $model->toArray(),
+    'operation' => 'render_publish_nodes',
+    'revision' => $revision->toArray(),
+    'methods' => $selected,
+  ];
+  smartdocs_revision_detail_submit($form_revision_details, $form_state_revision_details);
+  $form_state['redirect'] = url("$model_name/apis");
+}

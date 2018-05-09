@@ -666,6 +666,22 @@ function apiproduct_catalog_smartdocs_model_import($raw_source, $mime_type, $doc
       $model_term->field_model_category[LANGUAGE_NONE][] = ['tid' => $model_category->tid];
     }
   }
+
+  /**
+   * Attach the file after importing on the smartdocs_model taxonomy term
+   */
+  $field_info = field_info_instance('taxonomy_term','field_openapi_specification', 'smartdocs_models');
+  $file_destination = "public://" . $field_info['settings']['file_directory'];
+  if(!empty($field_info['settings']['file_directory'])) {
+    $file_destination .= "/";
+  }
+  if(!file_exists(drupal_realpath($file_destination))) {
+    drupal_mkdir($file_destination, NULL, true);
+  }
+  $file_destination .= $model_term->name . ($mime_type === 'application/yaml' ? ".yaml" : ".json");
+  $file = file_save_data($raw_source, $file_destination);
+  $model_term->field_openapi_specification = [LANGUAGE_NONE => [['fid' => $file->fid, 'display' => 1]]];
+
   taxonomy_term_save($model_term);
   $model->save(true);
 }

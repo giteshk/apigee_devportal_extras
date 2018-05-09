@@ -104,13 +104,13 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['empty']['area']['empty'] = TRUE;
   $handler->display->display_options['empty']['area']['content'] = '<div class="smartdocs-no-models">We are currently working on putting together our API documentation; we will be publishing them shortly. Please check back again soon. Thanks for your patience!</div>';
   $handler->display->display_options['empty']['area']['format'] = 'full_html';
-  /* Relationship: Taxonomy term: Content using Model */
+  /* Relationship: Taxonomy term: Content using API Docs */
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node']['id'] = 'reverse_field_smart_method_model_node';
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node']['table'] = 'taxonomy_term_data';
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node']['field'] = 'reverse_field_smart_method_model_node';
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node']['label'] = 'API Products';
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node']['required'] = TRUE;
-  /* Relationship: Taxonomy term: Content using Model */
+  /* Relationship: Taxonomy term: Content using API Docs */
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node_1']['id'] = 'reverse_field_smart_method_model_node_1';
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node_1']['table'] = 'taxonomy_term_data';
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node_1']['field'] = 'reverse_field_smart_method_model_node';
@@ -910,7 +910,7 @@ function apiproduct_catalog_views_default_views() {
       ),
     ),
     'field_product_categories_tid' => array(
-      'bef_format' => 'bef_links',
+      'bef_format' => 'bef',
       'more_options' => array(
         'bef_select_all_none' => 1,
         'bef_collapsible' => 0,
@@ -1079,14 +1079,13 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['filters']['field_product_categories_tid']['expose']['label'] = 'Categories';
   $handler->display->display_options['filters']['field_product_categories_tid']['expose']['operator'] = 'field_product_categories_tid_op';
   $handler->display->display_options['filters']['field_product_categories_tid']['expose']['identifier'] = 'field_product_categories_tid';
+  $handler->display->display_options['filters']['field_product_categories_tid']['expose']['multiple'] = TRUE;
   $handler->display->display_options['filters']['field_product_categories_tid']['expose']['remember_roles'] = array(
     2 => '2',
     1 => 0,
     3 => 0,
     4 => 0,
-    18 => 0,
     5 => 0,
-    19 => 0,
   );
   $handler->display->display_options['filters']['field_product_categories_tid']['reduce_duplicates'] = TRUE;
   $handler->display->display_options['filters']['field_product_categories_tid']['type'] = 'select';
@@ -1158,7 +1157,7 @@ function apiproduct_catalog_views_default_views() {
       ),
     ),
     'field_model_category_tid' => array(
-      'bef_format' => 'bef_links',
+      'bef_format' => 'bef',
       'more_options' => array(
         'bef_select_all_none' => 1,
         'bef_collapsible' => 0,
@@ -1199,7 +1198,7 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['empty']['area']['empty'] = TRUE;
   $handler->display->display_options['empty']['area']['content'] = '<div class="smartdocs-no-models">We are currently working on putting together our API documentation; we will be publishing them shortly. Please check back again soon. Thanks for your patience!</div>';
   $handler->display->display_options['empty']['area']['format'] = 'full_html';
-  /* Relationship: Taxonomy term: Content using Model */
+  /* Relationship: Taxonomy term: Content using API Docs */
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node']['id'] = 'reverse_field_smart_method_model_node';
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node']['table'] = 'taxonomy_term_data';
   $handler->display->display_options['relationships']['reverse_field_smart_method_model_node']['field'] = 'reverse_field_smart_method_model_node';
@@ -1320,14 +1319,13 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['filters']['field_model_category_tid']['expose']['label'] = 'Categories';
   $handler->display->display_options['filters']['field_model_category_tid']['expose']['operator'] = 'field_model_category_tid_op';
   $handler->display->display_options['filters']['field_model_category_tid']['expose']['identifier'] = 'field_model_category_tid';
+  $handler->display->display_options['filters']['field_model_category_tid']['expose']['multiple'] = TRUE;
   $handler->display->display_options['filters']['field_model_category_tid']['expose']['remember_roles'] = array(
     2 => '2',
     1 => 0,
     3 => 0,
     4 => 0,
-    18 => 0,
     5 => 0,
-    19 => 0,
   );
   $handler->display->display_options['filters']['field_model_category_tid']['type'] = 'select';
   $handler->display->display_options['filters']['field_model_category_tid']['vocabulary'] = 'smartdocs_model_categories';
@@ -1400,7 +1398,7 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['sorts']['created']['table'] = 'node';
   $handler->display->display_options['sorts']['created']['field'] = 'created';
   $handler->display->display_options['sorts']['created']['order'] = 'DESC';
-  /* Contextual filter: Content: Model (field_smart_method_model) */
+  /* Contextual filter: Content: API Docs (field_smart_method_model) */
   $handler->display->display_options['arguments']['field_smart_method_model_tid']['id'] = 'field_smart_method_model_tid';
   $handler->display->display_options['arguments']['field_smart_method_model_tid']['table'] = 'field_data_field_smart_method_model';
   $handler->display->display_options['arguments']['field_smart_method_model_tid']['field'] = 'field_smart_method_model_tid';
