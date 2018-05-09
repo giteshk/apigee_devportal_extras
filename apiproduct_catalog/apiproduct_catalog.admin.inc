@@ -20,21 +20,21 @@ function apiproduct_catalog_admin_form(array $form, array &$form_state)
 
     $form['apiproduct_catalog_product_access_mapping']['public'] = array(
         '#type' => 'checkboxes',
-        '#title' => 'Select a product to map to Public products',
+        '#title' => 'Select role(s) to map to Public products',
         '#required' => TRUE,
         '#default_value' => $var['public'],
         '#options' => $roles,
     );
     $form['apiproduct_catalog_product_access_mapping']['private'] = array(
         '#type' => 'checkboxes',
-        '#title' => 'Select a product to map to Private products',
+        '#title' => 'Select role(s) to map to Private products',
         '#required' => TRUE,
         '#default_value' => $var['private'],
         '#options' => $roles,
     );
     $form['apiproduct_catalog_product_access_mapping']['internal'] = array(
         '#type' => 'checkboxes',
-        '#title' => 'Select a product to map to Internal products',
+        '#title' => 'Select role(s) to map to Internal products',
         '#required' => TRUE,
         '#default_value' => $var['internal'],
         '#options' => $roles,
