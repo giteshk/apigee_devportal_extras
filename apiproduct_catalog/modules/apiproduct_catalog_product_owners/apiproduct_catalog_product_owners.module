@@ -305,6 +305,10 @@ function apiproduct_catalog_product_owners_upload_openapi($form, $form_state, $n
     '#upload_location' => 'public://openapi_files/',
     '#upload_validators' => ['file_validate_extensions' => ['json', 'yaml']],
   ];
+  $form['entity_id'] = [
+      '#type' => 'value',
+      '#value' => $node->nid
+  ];
   $form['submit'] = [
     '#type' => 'submit',
     '#value' => 'Submit',
@@ -399,5 +403,5 @@ function apiproduct_catalog_product_owners_upload_openapi_submit($form, &$form_s
     'methods' => $selected,
   ];
   smartdocs_revision_detail_submit($form_revision_details, $form_state_revision_details);
-  $form_state['redirect'] = url("$model_name/apis");
+  $form_state['redirect'] = url("node/" . $form_state['values']['entity_id'] . "/upload_openapi");
 }
