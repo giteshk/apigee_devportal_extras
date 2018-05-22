@@ -269,7 +269,10 @@ function apiproduct_catalog_product_owners_admin_paths(){
  */
 function apiproduct_catalog_product_owners_upload_openapi($form, $form_state, $node) {
   $edge_product = $node->field_edge_product_name[LANGUAGE_NONE][0]['value'];
-  $entity = entity_load_single("api_product", $edge_product);
+
+  $entities = entity_load("api_product", array($edge_product), array('show_private' => TRUE), true);
+  $entity = reset($entities);
+
   $table_data = [
     'caption' => 'Current specification files',
     'header' => ['API Name', 'File'],
