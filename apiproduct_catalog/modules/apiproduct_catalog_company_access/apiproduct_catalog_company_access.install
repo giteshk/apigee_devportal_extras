@@ -26,7 +26,6 @@ function apiproduct_catalog_company_access_schema(){
         'not null' => TRUE,
         'default' => 0,
       )
-      // Defaults to NULL in order to avoid a brief period of potential
     ),
     'primary key' => array('nid', 'company_id'),
   );
@@ -46,7 +45,6 @@ function apiproduct_catalog_company_access_schema(){
         'not null' => TRUE,
         'default' => '',
       )
-      // Defaults to NULL in order to avoid a brief period of potential
     ),
     'primary key' => array('id'),
   );
