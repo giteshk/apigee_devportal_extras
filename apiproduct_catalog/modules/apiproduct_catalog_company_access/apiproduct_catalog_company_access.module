@@ -1,0 +1,123 @@
+<?php
+
+function apiproduct_catalog_company_access_menu(){
+  $items = [];
+  $items['node/%node/audience'] = [
+      'title' => 'Consumers Groups',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => ['apiproduct_catalog_company_access_consumer_groups', 1],
+      'access callback' => 'node_access',
+      'access arguments' => ['update', 1],
+      'type' => MENU_LOCAL_TASK,
+  ];
+  return $items;
+}
+
+function apiproduct_catalog_company_access_consumer_groups($form, $form_state, $node) {
+  $form['nid'] = ['#type' => 'value', '#value' => $node->nid];
+  $company = new \Apigee\ManagementAPI\Company(devconnect_default_org_config());
+  $list  = _apiproduct_catalog_node_list_of_companies();
+
+  $query  = db_select('apiproduct_company_access' , 'c')
+                ->fields('c', ['company_id'])
+                ->condition('nid', $node->nid);
+  $result = $query->execute();
+  if(!empty($list)) {
+    $form['select_companies'] = [
+      '#type' => 'checkboxes',
+      '#title' => 'Select Companies you want to grant access to',
+      '#description' => 'Users belonging to these companies will get access to view and request keys for this apiproduct',
+      '#options' => $list,
+      '#default_value' => $result->fetchCol(),
+    ];
+    $form['submit'] = [
+      '#type' => 'submit',
+      '#value' => 'Submit'
+    ];
+  }else {
+    drupal_set_message("No companies in the system at the moment", 'warning');
+  }
+  return $form;
+};
+
+function apiproduct_catalog_company_access_consumer_groups_submit($form, $form_state){
+  $nid = $form_state['values']['nid'];
+  db_delete('apiproduct_company_access') ->condition('nid', $nid)->execute();
+  dpm($form_state['values']['select_companies']);
+  foreach($form_state['values']['select_companies'] as $key=>$value) {
+    if($value !== 0) {
+      db_insert('apiproduct_company_access')->fields(['nid' => $nid, 'company_id' => $value])->execute();
+    }
+  }
+  drupal_set_message("Saved the audience modification");
+}
+
+
+/**
+ * Implements hook_node_grants().
+ */
+function apiproduct_catalog_company_access_node_grants($account, $op)
+{
+  $developer = entity_load_single("developer", $account->mail);
+  $list = _apiproduct_catalog_node_list_of_companies();
+  $list = array_flip($list);
+  $developer_companies = array_combine($developer->companies,$developer->companies);
+  return ['apiproduct_catalog_company_access' => array_values(array_intersect_key($list, $developer_companies))];
+}
+
+function apiproduct_catalog_company_access_init(){
+
+}
+
+function apiproduct_catalog_company_access_node_access_records($node)
+{
+  $result = db_select("apiproduct_company_access", 'a')
+              ->fields('a', ['company_id'])
+              ->condition('nid', $node->nid)
+              ->execute();
+  $grants = [];
+  foreach($result->fetchCol() as $company_id) {
+    $grants[] = [
+      'realm' => 'apiproduct_catalog_company_access',
+      'gid' => $company_id,
+      'grant_view' => 1,
+      'grant_update' => 0,
+      'grant_delete' => 0,
+      'priority' => 0,
+    ];
+  }
+  return $grants;
+}
+
+function apiproduct_catalog_node_cron(){
+  _apiproduct_catalog_node_list_of_companies(TRUE);
+}
+
+function _apiproduct_catalog_node_list_of_companies($reset = FALSE){
+
+  $list = drupal_static(__FUNCTION__, []);
+  if($reset) {
+    $list = [];
+  }
+  if(!empty($list)) {
+    return $list;
+  }else if (TRUE || !($cache = cache_get(__FUNCTION__))) {
+    $company = new \Apigee\ManagementAPI\Company(devconnect_default_org_config());
+    $companies_in_edge = $company->listCompanies();
+
+    db_delete("companies_index")->condition("name", $companies_in_edge, "NOT IN")->execute();
+    $companies_in_db = db_select("companies_index", 'c') ->fields("c", ['name'])->execute()->fetchCol();
+
+    foreach(array_diff($companies_in_edge, $companies_in_db) as $company_name) {
+      db_insert("companies_index")->fields(['name' => $company_name])->execute();
+    }
+    $result = db_select("companies_index", 'c') ->fields("c")->execute();
+    foreach($result as $row) {
+      $list[$row->id] = $row->name;
+    }
+    cache_set(__FUNCTION__, $list, 'cache', time() + 10*60);
+  }else {
+    $list = $cache->data;
+  }
+  return $list;
+}

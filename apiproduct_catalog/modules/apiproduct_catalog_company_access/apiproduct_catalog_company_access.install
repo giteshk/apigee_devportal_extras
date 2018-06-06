@@ -1,0 +1,50 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for App Dashboard module.
+ */
+
+function apiproduct_catalog_company_access_schema(){
+  $schema['apiproduct_company_access'] = array(
+    'description' => 'Table to store which companies have access to which private or internal products',
+    'fields' => array(
+      'nid' => array(
+        'description' => 'The primary identifier for a node.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'company_id' => array(
+        'description' => 'The internal id of the company',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      )
+      // Defaults to NULL in order to avoid a brief period of potential
+    ),
+    'primary key' => array('nid', 'company_id'),
+  );
+  $schema['companies_index'] = array(
+    'description' => 'Table to store companies and assign them an ID',
+    'fields' => array(
+      'id' => array(
+        'description' => 'The  identifier for company.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'name' => array(
+        'description' => 'The internal name of the company',
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      )
+      // Defaults to NULL in order to avoid a brief period of potential
+    ),
+    'primary key' => array('id'),
+  );
+  return $schema;
+}

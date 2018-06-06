@@ -1,0 +1,6 @@
+name = APIProduct Catalog - Company Access
+description = Adds the ability to provide API Products access to Companies
+core = 7.x
+package = Apigee Extras
+version = 7.x-1.0-beta
+dependencies[] = apiproduct_catalog
