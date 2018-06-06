@@ -3,7 +3,11 @@
  * @file
  * Install, update and uninstall functions for App Dashboard module.
  */
-
+/**
+ * Implements hook_schema
+ *
+ * @return mixed
+ */
 function apiproduct_catalog_company_access_schema(){
   $schema['apiproduct_company_access'] = array(
     'description' => 'Table to store which companies have access to which private or internal products',
@@ -27,7 +31,7 @@ function apiproduct_catalog_company_access_schema(){
     'primary key' => array('nid', 'company_id'),
   );
   $schema['companies_index'] = array(
-    'description' => 'Table to store companies and assign them an ID',
+    'description' => 'Table to store companies and assign them an identifier',
     'fields' => array(
       'id' => array(
         'description' => 'The  identifier for company.',

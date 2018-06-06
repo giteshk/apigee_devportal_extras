@@ -1,5 +1,9 @@
 <?php
 
+/**
+ * Implements hook_menu
+ * @return array
+ */
 function apiproduct_catalog_company_access_menu(){
   $items = [];
   $items['node/%node/audience'] = [
@@ -13,6 +17,14 @@ function apiproduct_catalog_company_access_menu(){
   return $items;
 }
 
+/**
+ * Page callback to allow product owners to specify which companies have access to the product
+ *
+ * @param $form
+ * @param $form_state
+ * @param $node
+ * @return mixed
+ */
 function apiproduct_catalog_company_access_consumer_groups($form, $form_state, $node) {
   $form['nid'] = ['#type' => 'value', '#value' => $node->nid];
   $company = new \Apigee\ManagementAPI\Company(devconnect_default_org_config());
@@ -40,10 +52,16 @@ function apiproduct_catalog_company_access_consumer_groups($form, $form_state, $
   return $form;
 };
 
+/**
+ * Submit callback to save the information of companies mapping to API Products
+ *
+ * @param $form
+ * @param $form_state
+ */
 function apiproduct_catalog_company_access_consumer_groups_submit($form, $form_state){
   $nid = $form_state['values']['nid'];
   db_delete('apiproduct_company_access') ->condition('nid', $nid)->execute();
-  dpm($form_state['values']['select_companies']);
+
   foreach($form_state['values']['select_companies'] as $key=>$value) {
     if($value !== 0) {
       db_insert('apiproduct_company_access')->fields(['nid' => $nid, 'company_id' => $value])->execute();
@@ -65,10 +83,12 @@ function apiproduct_catalog_company_access_node_grants($account, $op)
   return ['apiproduct_catalog_company_access' => array_values(array_intersect_key($list, $developer_companies))];
 }
 
-function apiproduct_catalog_company_access_init(){
-
-}
-
+/**
+ * Implements hook_node_access_records
+ *
+ * @param $node
+ * @return array
+ */
 function apiproduct_catalog_company_access_node_access_records($node)
 {
   $result = db_select("apiproduct_company_access", 'a')
@@ -89,19 +109,29 @@ function apiproduct_catalog_company_access_node_access_records($node)
   return $grants;
 }
 
+/**
+ * Implements hook_cron
+ */
 function apiproduct_catalog_node_cron(){
+    //reset the list of companies on cron run
   _apiproduct_catalog_node_list_of_companies(TRUE);
 }
 
+/**
+ * Pull the list of companies from Edge and store new ones in the Portal DB.
+ *
+ * @param bool $reset
+ * @return array
+ */
 function _apiproduct_catalog_node_list_of_companies($reset = FALSE){
 
-  $list = drupal_static(__FUNCTION__, []);
+  $list = &drupal_static(__FUNCTION__, []);
   if($reset) {
     $list = [];
   }
   if(!empty($list)) {
     return $list;
-  }else if (TRUE || !($cache = cache_get(__FUNCTION__))) {
+  }else if (!($cache = cache_get(__FUNCTION__))) {
     $company = new \Apigee\ManagementAPI\Company(devconnect_default_org_config());
     $companies_in_edge = $company->listCompanies();
 
