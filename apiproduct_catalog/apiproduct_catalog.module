@@ -645,6 +645,7 @@ function apiproduct_catalog_smartdocs_model_import($raw_source, $mime_type, $doc
   
     if ($swagger_obj) {
       $swagger_json = json_encode($swagger_obj);
+      $swagger_json = json_decode($swagger_json, true);
     }
   } else {
     $swagger_json = json_decode($raw_source, true);
