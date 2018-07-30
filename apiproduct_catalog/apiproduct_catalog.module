@@ -159,7 +159,14 @@ function apiproduct_catalog_cron()
     /**
      *  Get all the products in edge and make sure they have the access attribute
      */
-    $apiproducts_in_edge = entity_load("api_product", array(), array('show_private' => TRUE), true);
+    try {
+      $apiproducts_in_edge = entity_load("api_product", array(), array('show_private' => TRUE), true);
+    }
+    catch (Exception $e) {
+      watchdog('apiproduct_catalog', 'There was a problem retrieving the API products, cron run aborted.');
+      return;
+    }
+
     //Sort by created date
     uasort($apiproducts_in_edge, function ($a, $b) {
         if ($a->createdAt == $b->createdAt) {
