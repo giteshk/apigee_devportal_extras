@@ -174,6 +174,7 @@ function apiproduct_catalog_cron()
         }
         return $a->createdAt < $b->createdAt ? -1 : 1;
     });
+  
     //Make sure the products have some default values for access custom attributes
     array_walk($apiproducts_in_edge, function ($product, $key) {
         if (!isset($product->attributes['access'])) {
@@ -189,6 +190,7 @@ function apiproduct_catalog_cron()
     $create_queue = DrupalQueue::get('edge_apiproduct_creates');
 
     $force_sync = variable_get("apiproduct_catalog_force_sync", false);
+  
     foreach ($apiproducts_in_edge as $product_name => $product) {
         if (isset($apiproducts_in_db[$product_name])) {
             /**
@@ -254,7 +256,6 @@ function _apiproduct_catalog_unpublish_worker($nid)
  */
 function _apiproduct_catalog_create_worker($product, $nid = null)
 {
-
     static $smartdocs_model_vocab;
     if (!isset($smartdocs_model_vocab)) {
         $smartdocs_model_vocab =
@@ -349,21 +350,46 @@ function _apiproduct_catalog_create_worker($product, $nid = null)
 /**
  * Implements hook_node_presave().
  */
-function apiproduct_catalog_node_presave($node)
-{
-    if ($node->type == 'edge_api_product' && (empty($node->nid) || $node->is_new)) {
-        $query = new EntityFieldQuery();
-
-        //Load the API Product nodes using the current model
-        $result = $query->entityCondition("entity_type", "node")
-            ->entityCondition("bundle", "edge_api_product")
-            ->fieldCondition("field_edge_product_name", 'value', $node->field_edge_product_name[LANGUAGE_NONE][0]['value'], '=')
-            ->addTag('DANGEROUS_ACCESS_CHECK_OPT_OUT')
-            ->execute();
-        if (!empty($result['node'])) {
-            throw  new Exception("API Product node already exists");
+function apiproduct_catalog_node_presave($node) {
+  if ($node->type == 'edge_api_product' && (empty($node->nid) || $node->is_new)) {
+    
+    // Get the field value of the edge product name.
+    $edge_product_name = field_get_items('node', $node, 'field_edge_product_name');
+    if ($edge_product_name) {
+      
+      // Build a query to check for any products with that product name. Assume
+      // that this query will do a case insensitive search, while Edge makes no
+      // such distinction.
+      $query  = new EntityFieldQuery();
+      $result = $query->entityCondition("entity_type", "node")
+        ->entityCondition("bundle", "edge_api_product")
+        ->fieldCondition("field_edge_product_name", 'value', $edge_product_name[0]['value'])
+        ->addTag('DANGEROUS_ACCESS_CHECK_OPT_OUT')
+        ->execute();
+      
+      // If there are products in Drupal that share this name, do a case
+      // sensitive check.
+      if (!empty($result['node'])) {
+        $product_nids   = array_keys($result['node']);
+        $product_nodes  = node_load_multiple($product_nids);
+        $product_exists = FALSE;
+        foreach ($product_nodes as $product_node) {
+          $product_edge_product_name = field_get_items('node', $product_node, 'field_edge_product_name');
+          if ($product_edge_product_name) {
+            if ($product_edge_product_name[0]['value'] == $edge_product_name[0]['value']) {
+              $product_exists = TRUE;
+              break;
+            }
+          }
         }
+        
+        // Throw an exception to prevent the saving of the node.
+        if ($product_exists) {
+          throw new Exception("API Product node already exists");
+        }
+      }
     }
+  }
 }
 
 
