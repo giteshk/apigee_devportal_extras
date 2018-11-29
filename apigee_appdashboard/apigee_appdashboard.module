@@ -63,6 +63,11 @@ function apigee_appdashboard_permission()
 
 function apigee_appdashboard_app_load($app_id)
 {
+    if(!empty($_GET['company'])) {
+        // Need this to get around all the company context being set in session for Controllers
+        $company = entity_load_single("apigee_company",check_plain($_GET['company']));
+        apigee_company_set_current_context_company($company);
+    }
     return entity_load_single("developer_app", $app_id);
 }
 

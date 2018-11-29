@@ -570,7 +570,7 @@ function apiproduct_catalog_views_default_views() {
   $handler->display->display_options['fields']['nothing']['label'] = 'Review';
   $handler->display->display_options['fields']['nothing']['alter']['text'] = 'Details';
   $handler->display->display_options['fields']['nothing']['alter']['make_link'] = TRUE;
-  $handler->display->display_options['fields']['nothing']['alter']['path'] = 'admin/apigee_extras/appdashboard/app-details/[app_id]/view';
+  $handler->display->display_options['fields']['nothing']['alter']['path'] = 'admin/apigee_extras/appdashboard/app-details/[app_id]/view?company=[company]';
   $handler->display->display_options['fields']['nothing']['alter']['absolute'] = TRUE;
   $handler->display->display_options['fields']['nothing']['element_label_colon'] = FALSE;
   /* Sort criterion: App Dashboard: Date/Time Modified */
