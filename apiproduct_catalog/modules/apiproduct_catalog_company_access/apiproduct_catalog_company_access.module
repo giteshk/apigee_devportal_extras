@@ -67,7 +67,13 @@ function apiproduct_catalog_company_access_consumer_groups_submit($form, $form_s
       db_insert('apiproduct_company_access')->fields(['nid' => $nid, 'company_id' => $value])->execute();
     }
   }
+  $node = node_load($nid);
   drupal_set_message("Saved the audience modification");
+  node_access_acquire_grants($node, true);
+  /**
+   * trigger acquire grants for node
+   */
+  apiproduct_catalog_node_update($node);
 }
 
 
@@ -131,7 +137,7 @@ function _apiproduct_catalog_node_list_of_companies($reset = FALSE){
   }
   if(!empty($list)) {
     return $list;
-  }else if (!($cache = cache_get(__FUNCTION__))) {
+  }else if ($reset || !($cache = cache_get(__FUNCTION__))) {
     $company = new \Apigee\ManagementAPI\Company(devconnect_default_org_config());
     $companies_in_edge = $company->listCompanies();
 
@@ -150,4 +156,16 @@ function _apiproduct_catalog_node_list_of_companies($reset = FALSE){
     $list = $cache->data;
   }
   return $list;
+}
+
+/**
+ *  Implements hook_form_FORM_ID_alter().
+ */
+function apiproduct_catalog_company_access_form_apigee_company_company_form_alter(&$form, $form_state){
+  $form['actions']['submit']['#submit'][] = 'apiproduct_catalog_company_access_form_apigee_company_company_form_submit';
+}
+
+function apiproduct_catalog_company_access_form_apigee_company_company_form_submit($form, $form_state){
+  //Reset the Company cache
+  _apiproduct_catalog_node_list_of_companies(true);
 }
