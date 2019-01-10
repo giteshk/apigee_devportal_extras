@@ -141,7 +141,9 @@ function _apiproduct_catalog_node_list_of_companies($reset = FALSE){
     $company = new \Apigee\ManagementAPI\Company(devconnect_default_org_config());
     $companies_in_edge = $company->listCompanies();
 
-    db_delete("companies_index")->condition("name", $companies_in_edge, "NOT IN")->execute();
+    if(!empty($companies_in_edge)) {
+      db_delete("companies_index")->condition("name", $companies_in_edge, "NOT IN")->execute();
+    }
     $companies_in_db = db_select("companies_index", 'c') ->fields("c", ['name'])->execute()->fetchCol();
 
     foreach(array_diff($companies_in_edge, $companies_in_db) as $company_name) {
