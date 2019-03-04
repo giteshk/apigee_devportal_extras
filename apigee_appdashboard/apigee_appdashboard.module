@@ -121,7 +121,7 @@ function apigee_appdashboard_key_form($form, $form_state, DeveloperAppEntity $ap
             'expires_at' => [
                 '#title' => 'Expires At',
                 '#type' => 'item',
-                '#markup' => is_null($c['expiresAt']) ? "Never" : format_date(round($c['expiresAt'] / 1000), 'medium'),
+                '#markup' => ($c['expiresAt'] == -1) ? "Never" : format_date(round($c['expiresAt'] / 1000), 'medium'),
             ],
             'consumerKey' => [
                 '#type' => 'value',

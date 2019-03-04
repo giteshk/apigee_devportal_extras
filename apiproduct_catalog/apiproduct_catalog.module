@@ -333,25 +333,38 @@ function _apiproduct_catalog_create_worker($product, $nid = null)
         }
         $node->field_product_categories[LANGUAGE_NONE][] = ['tid' => $api_product_categories_published[$_category]];
     }
-
-    /**
-     * Invoke presave hooks to let other modules write into the product node anything they want.
-     *  Also pass in the product object from edge.
-     */
-    drupal_alter("apiproduct_catalog_node_presave", $node, $product);
-
-    node_save($node);
-
-    module_invoke_all("apiproduct_catalog_node_postsave", $node, $product);
+   
+    // Before the node is saved, validate that the product is not going to be
+    // duplicated by this action. This was previously done in
+    // apiproduct_catalog_node_presave() but the way to prevent the save in the
+    // case of a duplicate, is to throw an exception. This causes queue records
+    // to pile up and fills up the watchdog log.
+    if (apiproduct_catalog_unique_product($node)) {
+  
+      /**
+       * Invoke presave hooks to let other modules write into the product node anything they want.
+       *  Also pass in the product object from edge.
+       */
+      drupal_alter("apiproduct_catalog_node_presave", $node, $product);
+  
+      node_save($node);
+  
+      module_invoke_all("apiproduct_catalog_node_postsave", $node, $product);
+    }
 
     return true;
 }
 
 /**
- * Implements hook_node_presave().
+ * Check for product uniqueness.
+ *
+ * @param object $node
+ *
+ * @return boolean
  */
-function apiproduct_catalog_node_presave($node) {
-  if ($node->type == 'edge_api_product' && (empty($node->nid) || $node->is_new)) {
+function apiproduct_catalog_unique_product($node) {
+  $unique = TRUE;
+  if (empty($node->nid) || $node->is_new) {
     
     // Get the field value of the edge product name.
     $edge_product_name = field_get_items('node', $node, 'field_edge_product_name');
@@ -385,11 +398,13 @@ function apiproduct_catalog_node_presave($node) {
         
         // Throw an exception to prevent the saving of the node.
         if ($product_exists) {
-          throw new Exception("API Product node already exists");
+          $unique = FALSE;
         }
       }
     }
   }
+  
+  return $unique;
 }
 
 
