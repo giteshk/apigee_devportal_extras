@@ -50,9 +50,7 @@ function apiproduct_catalog_product_owners_tokens($type, $tokens, array $data = 
   $all_approver_emails = [];
   $all_approver_roles = [];
   $pending_approver_roles = [];
-  dpm($all_products);
   $apiproducts = entity_load('api_product', $all_products, ['show_private' => true]);
-  dpm($apiproducts);
   $all_roles = array_flip(user_roles());
 
   foreach($apiproducts as $product_name => $product) {
